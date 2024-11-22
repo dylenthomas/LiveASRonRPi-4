@@ -1,6 +1,5 @@
 import pyaudio 
 import wave
-import glob 
 import numpy 
 import time
 import devices
@@ -16,9 +15,12 @@ SECONDS = 1
 p = pyaudio.PyAudio()
 files_recv = False
 
-def find_current_amount_data():
-    data = glob.glob('data/*')
-    return len(data)
+"""
+0 - background noise
+1 - talking
+2 - music
+3 - target whistle
+"""
 
 def get_num_files(files_recv):
     while not files_recv:
@@ -42,10 +44,9 @@ def make_file_name():
 
     return '_' + file_name
 
-amnt_data = find_current_amount_data()
-
 device_index = devices.choose_device('Blue Snowball')
 print(f'\n\nThe devce was found..\n')
+
 record_time = float(input('Enter the time between recordings: '))
 file_name = input('Enter the prefix for the file names: ')
 class_id = int(input('Enter an int representing the class id of the audio: '))
@@ -66,10 +67,9 @@ for i in range(get_num_files(files_recv)):
                     input=True,
                     input_device_index=int(device_index))
     
-    for i in range(0, int(FS / CHUNK * SECONDS)):
+    for i in range(0, round(FS/CHUNK * SECONDS)):
         data = stream.read(CHUNK)
         chunk = numpy.frombuffer(data, numpy.int16)
-        chunk = chunk * 5 #adjust volume
         frames.append(chunk)
         print ("\033[A                             \033[A")
         print(i)
@@ -77,15 +77,31 @@ for i in range(get_num_files(files_recv)):
     print('*STOP*\n')
     
     stream.close()
-    wf = wave.open(file_path, 'wb')
-    wf.setnchannels(CHANNELS)
-    wf.setsampwidth(p.get_sample_size(SAMPLE_FORMAT))
-    wf.setframerate(FS)
-    wf.writeframes(b''.join(frames))
-    wf.close()
-    print(f'{file_path} was saved.')
+   
+    if file_name == 'target whistle':
+        while True:
+            delete = input('Would you like to keep the file? (y/n)\n')
+            if delete != 'y' or delete != 'n':
+                print('enter y/n')
+            else:
+                if delete == 'y':
+                    delete = True
+                    break 
+                else:
+                    delete = False
+                    break 
+    else:
+        delete = False
+         
+    if not delete: 
+        wf = wave.open(file_path, 'wb')
+        wf.setnchannels(CHANNELS)
+        wf.setsampwidth(p.get_sample_size(SAMPLE_FORMAT))
+        wf.setframerate(FS)
+        wf.writeframes(b''.join(frames))
+        wf.close()
+        print(f'{file_path} was saved.')
 
     time.sleep(1)
-
 
 p.terminate()
