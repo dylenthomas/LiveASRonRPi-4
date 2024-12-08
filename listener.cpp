@@ -34,7 +34,7 @@ static void printAudioDevices() {
         outputChannels = device->maxOutputChannels;
         inputChannels = device->maxInputChannels;
 
-        std::cout << "Device [" << deviceName << "] has: " << outputChannels << "output channels, and " << inputChannels << "input channels\n";
+        std::cout << "Device (" << deviceName << ") has: " << outputChannels << "output channels, and " << inputChannels << "input channels\n";
     }
 }
 
@@ -69,8 +69,7 @@ class Listener {
     private:
         PaStreamParameters inputParameters;
         PaError err;
-        PaStream* stream1;
-        PaStream* stream2;
+        PaStream* stream;
 
         torch::jit::script::Module model;
         std::vector<torch::jit::IValue> modelInput;
@@ -86,9 +85,9 @@ class Listener {
             inputParameters.suggestedLatency = Pa_GetDeviceInfo(micIndex)->defaultLowInputLatency;
         }
 
-        void openStreams() {
+        void openStream() {
             err = Pa_OpenStream(
-                    &stream1,
+                    &stream,
                     &inputParameters,
                     NULL,
                     SAMPLERATE,
@@ -98,42 +97,19 @@ class Listener {
                     NULL
                     );
             checkErr(err);
-
-            err = Pa_OpenStream(
-                    &stream2,
-                    &inputParameters,
-                    NULL,
-                    SAMPLERATE,
-                    FRAMESPERBUFFER,
-                    paNoFlag,
-                    callback,
-                    NULL
-                    );
-            checkErr(err);
+            std::cout << "Opened stream." << std::endl;
         }
 
-        void startStreams() {
-            auto start = std::chrono::high_resolution_clock::now();
-            err = Pa_StartStream(&stream1);
+        void startStream() {
+            err = Pa_StartStream(&stream);
             checkErr(err);
-            auto end = std::chrono::high_resolution_clock::now();
-
-            //create two audio streams 90 deg out of phase
-            std::chrono::milliseconds offset(500);
-            const std::chrono::duration<double> wait = offset - (end - start);
-            std::cout << "Time to start stream 1: " << wait.count() << std::endl;
-            std::this_thread::sleep_for(wait);
-
-            err = Pa_StartStream(&stream2);
-            checkErr(err);
+            std::cout << "Started stream." << std::endl;
         }
 
-        void stopStreams() {
-            err = Pa_StopStream(&stream1);
+        void stopStream() {
+            err = Pa_StopStream(&stream);
             checkErr(err);
-
-            err = Pa_StopStream(&stream2);
-            checkErr(err);
+            std::cout << "Stopped stream." << std::endl;
         }
 
         void loadModel() {
@@ -187,26 +163,26 @@ int main() {
     int micIndex = getMicrophone(name);
 
     if (micIndex < 0) {
-        std::cout << "The device [" << name << "] could not be found.\n";
+        std::cout << "The device (" << name << ") could not be found.\n";
         std::cout << "This is a list of all the devices:\n";
         printAudioDevices();
         return 0;
     }
-    std::cout << "The device [" << name << "] was found at index: " << micIndex << std::endl;
+    std::cout << "=================================================" << std::endl;
+    std::cout << "The device (" << name << ") was found at index: " << micIndex << std::endl;
 
     Listener listener;
     listener.setInputParams(micIndex);
     listener.loadModel();
 
-    listener.openStreams();
-    listener.startStreams();
+    listener.openStream();
+    //listener.startStream();
 
 
 
 
     //shut down
-    listener.stopStreams();
-
+    listener.stopStream();
     err = Pa_Terminate();
     checkErr(err);
     return 0;
