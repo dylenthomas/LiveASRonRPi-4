@@ -16,10 +16,10 @@ p = pyaudio.PyAudio()
 files_recv = False
 
 """
-0 - background noise
+0 - background-noise
 1 - talking
 2 - music
-3 - target whistle
+3 - target-whistle
 4 - door open
 """
 
@@ -83,7 +83,7 @@ for i in range(get_num_files(files_recv)):
     
     stream.close()
    
-    if file_name == 'target whistle':
+    if file_name == 'target-wwhistle':
         while True:
             delete = input('Would you like to keep the file? (y/n)\n')
             if delete != 'y' or delete != 'n':
