@@ -88,7 +88,8 @@ def main():
    
     for file in data:
         playback(file, class_dir) 
-         
+    
+    p.terminate() 
     
      
 if __name__ == '__main__':

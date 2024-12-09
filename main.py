@@ -3,6 +3,7 @@ import numpy as np
 import torch 
 import torchaudio
 import time
+from noisereduce.torchgate import TorchGate as TG
 
 class wake_word_listener():
     def __init__(self, model_path: str, format=pyaudio.paInt16, rate=44100):
@@ -20,10 +21,11 @@ class wake_word_listener():
         self.model = torch.jit.load(model_path).eval()
         self.mel_transform = torchaudio.transforms.MelSpectrogram(
             sample_rate=rate,
-            n_fft=1024,
-            hop_length=512,
+            n_fft=978,
             n_mels=64
         )
+        self.tg = TG(sr=rate, nonstationary=True, n_fft=978)
+        
         self.last_timestamp = time.time()
         
     def get_device_index(self):
@@ -54,7 +56,6 @@ class wake_word_listener():
         """
 
         np_data = np.frombuffer(in_data, dtype=np.int16)
-        #np_data = np_data * 5 #boost the volume slightly
         self.audio_data = (np_data, time.time())
 
         return (np_data, pyaudio.paContinue)
@@ -67,9 +68,10 @@ class wake_word_listener():
 
         tensor_data = torch.tensor(self.audio_data[0]).to(dtype=torch.float)
         tensor_data = torch.FloatTensor(tensor_data)
-        tensor_data = torch.reshape(tensor_data, (1, tensor_data.shape[0])) #reshape for channel num
-        tensor_data = torch.reshape(tensor_data, (1, tensor_data.shape[0], tensor_data.shape[1]))
+        tensor_data = tensor_data.unsqueeze(0).unsqueeze(0)
+        tensor_data = self.tg(tensor_data)
         tensor_data = self.mel_transform(tensor_data)
+        
 
         if self.audio_data[1] != self.last_timestamp:
             with torch.no_grad():

@@ -3,6 +3,7 @@ import torchaudio
 import torch
 import os
 import glob
+from noisereduce.torchgate import TorchGate as TG
 
 class dataset(Dataset):
     def __init__(self, root_path: str, sample_rate: int, num_samples: int, device='cpu'):
@@ -21,10 +22,10 @@ class dataset(Dataset):
         self.mel_transform = torchaudio.transforms.MelSpectrogram(
             sample_rate=self.sample_rate,
             n_fft=978, #computed to make the size of data 91
-            #hop_length=512,
             n_mels=64
         ).to(self.device)
-
+        self.tg = TG(sr=self.sample_rate, nonstationary=True, n_fft=978).to(self.device) #noise reduction
+        
     def __len__(self):
         return sum(self.data_per_class)
 
@@ -49,6 +50,7 @@ class dataset(Dataset):
             signal = self._resample(signal, sample_rate)
 
         signal = self._edit_signal_length(signal)
+        signal = self.tg(signal)
         signal = self.mel_transform(signal)
         signal = signal.view(64, 91)
 

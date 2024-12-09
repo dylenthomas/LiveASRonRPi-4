@@ -83,7 +83,7 @@ for i in range(get_num_files(files_recv)):
     
     stream.close()
    
-    if file_name == 'target-wwhistle':
+    if file_name == 'target-whistle':
         while True:
             delete = input('Would you like to keep the file? (y/n)\n')
             if delete != 'y' or delete != 'n':
