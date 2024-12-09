@@ -20,7 +20,7 @@ files_recv = False
 1 - talking
 2 - music
 3 - target-whistle
-4 - door open
+4 - person-in-room 
 """
 
 def get_num_files(files_recv):
