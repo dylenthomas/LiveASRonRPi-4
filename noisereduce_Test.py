@@ -1,37 +1,15 @@
 from noisereduce.torchgate import TorchGate as TG
-import wave
-import pyaudio
-from scipy.io import wavfile
+import torchaudio
+from pydub import AudioSegment, effects
 
-p = pyaudio.PyAudio()
+def normalize(dir):
+    rawsound = AudioSegment.from_file(dir, 'wav')
+    normalized_sound = effects.normalize(rawsound)
+    normalized_sound.export(dir, format='wav')
 
-chunk = 1024
+audio_tensor, sr = torchaudio.load("./UnusedData/full_dataset_copy/0/background-noise_b6P2L.wav")
+tg = TG(sr=sr, nonstationary=False).to('cpu')
+reduced_audio = tg(audio_tensor)
+torchaudio.save("test.wav", reduced_audio, sr)
 
-wf = wave.open("/Users/dylenthomas/Documents/whisper/full_dataset/0/backgound-noise_2IgBh.wav", 'rb')
-rate, noisy_data = wavfile.read("/Users/dylenthomas/Documents/whisper/full_dataset/0/backgound-noise_2IgBh.wav")
-stream = p.open(format=p.get_format_from_width(wf.getsampwidth()),
-                channels=wf.getnchannels(),
-                rate=wf.getframerate(),
-                output=True
-                )
-
-data = wf.readframes(chunk)
-while data:
-    stream.write(data)
-    data = wf.readframes(chunk)
-    
-tg = TG(sr=wf.getframerate(), nonstationary=True).to('cpu')
-#reduced_audio = tg(audio_tensor)
-
-
-wf = wave.open("test.wav", 'rb')
-stream = p.open(format=p.get_format_from_width(wf.getsampwidth()),
-                channels=wf.getnchannels(),
-                rate=wf.getframerate(),
-                output=True
-                )
-
-data = wf.readframes(chunk)
-while data:
-    stream.write(data)
-    data = wf.readframes(chunk)
+normalize("test.wav")

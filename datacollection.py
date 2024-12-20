@@ -2,7 +2,7 @@ import pyaudio
 import wave
 import numpy as np 
 import time
-import devices
+from TCN import devices
 import random
 import os 
 
@@ -17,10 +17,11 @@ files_recv = False
 
 """
 0 - background-noise
-1 - talking
+1 - talking-not-me
 2 - music
 3 - target-whistle
-4 - person-in-room 
+4 - person-in-room
+5 - talking-me
 """
 
 def get_num_files(files_recv):
@@ -39,7 +40,7 @@ def make_file_name():
     options = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz12345678910'
     file_name = ''
     
-    for i in range(5):
+    for _ in range(5):
         choice = random.randrange(0, len(options) - 1)
         file_name += options[choice]
 
@@ -82,30 +83,13 @@ for i in range(get_num_files(files_recv)):
     
     
     stream.close()
-   
-    if file_name == 'target-whistle':
-        while True:
-            delete = input('Would you like to keep the file? (y/n)\n')
-            if delete != 'y' or delete != 'n':
-                print('enter y/n')
-            else:
-                if delete == 'y':
-                    delete = True
-                    break 
-                else:
-                    delete = False
-                    break 
-    else:
-        delete = False
-         
-    if not delete: 
-        wf = wave.open(file_path, 'wb')
-        wf.setnchannels(CHANNELS)
-        wf.setsampwidth(p.get_sample_size(SAMPLE_FORMAT))
-        wf.setframerate(FS)
-        wf.writeframes(b''.join(frames))
-        wf.close()
-        print(f'{file_path} was saved.')
+    wf = wave.open(file_path, 'wb')
+    wf.setnchannels(CHANNELS)
+    wf.setsampwidth(p.get_sample_size(SAMPLE_FORMAT))
+    wf.setframerate(FS)
+    wf.writeframes(b''.join(frames))
+    wf.close()
+    print(f'{file_path} was saved.')
 
     time.sleep(1)
 

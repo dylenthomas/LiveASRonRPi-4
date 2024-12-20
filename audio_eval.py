@@ -6,11 +6,6 @@ import os
 DATSET_DIR = "/Users/dylenthomas/Documents/whisper/full_dataset/"
 CHUNK = 1024
 
-#init parser
-parser = argparse.ArgumentParser()
-parser.add_argument('class_int', help='The int of the class id to iterate through', type=int)
-args = parser.parse_args()
-
 #init pyaudio
 p = pyaudio.PyAudio()
 
@@ -33,16 +28,18 @@ def get_input(message, *args):
 
     return choice
 
-def playback(file, class_dir):
+def playback(abs_dir):
     checked = open('/Users/dylenthomas/Documents/whisper/checked.txt')
     add_checked = open('/Users/dylenthomas/Documents/whisper/checked.txt', 'a')
 
-    abs_dir = os.path.join(class_dir, file) 
     if abs_dir in checked.read().split('\n'):
         checked.close()
         add_checked.close() 
         return
     
+    abs_dir_split = abs_dir.split('/')
+    file = abs_dir_split[len(abs_dir_split) - 1]
+     
     print(f'Playing: {file}')
      
     wf = wave.open(abs_dir, 'rb')
@@ -64,6 +61,7 @@ def playback(file, class_dir):
             
     if get_input('Move the file? (y/n)', 'y', 'n') == 'y':
         new_class = get_input('What class do you want to move the file too?', '0', '1', '2', '3', '4', '5')
+        class_dir = '/'.join(abs_dir_split[:-1])
         class_dir = class_dir[:-1] + new_class #replace the class dir with the new one
         os.rename(abs_dir, os.path.join(class_dir, file)) 
         abs_dir = os.path.join(class_dir, file)
@@ -86,11 +84,18 @@ def main():
     
     print('Starting playback.')
    
-    for file in data:
-        playback(file, class_dir) 
+    for i, file in enumerate(data):
+        if '.DS_Store' in file: continue
+        abs_dir = os.path.join(class_dir, file) 
+        playback(abs_dir)
+        print(f'{i + 1} / {len(data)}') 
     
     p.terminate() 
     
      
 if __name__ == '__main__':
+    #init parser
+    parser = argparse.ArgumentParser()
+    parser.add_argument('class_int', help='The int of the class id to iterate through', type=int)
+    args = parser.parse_args()
     main()

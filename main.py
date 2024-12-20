@@ -3,7 +3,6 @@ import numpy as np
 import torch 
 import torchaudio
 import time
-from noisereduce.torchgate import TorchGate as TG
 
 class wake_word_listener():
     def __init__(self, model_path: str, format=pyaudio.paInt16, rate=44100):
@@ -24,7 +23,6 @@ class wake_word_listener():
             n_fft=978,
             n_mels=64
         )
-        self.tg = TG(sr=rate, nonstationary=True, n_fft=978)
         
         self.last_timestamp = time.time()
         
@@ -69,7 +67,6 @@ class wake_word_listener():
         tensor_data = torch.tensor(self.audio_data[0]).to(dtype=torch.float)
         tensor_data = torch.FloatTensor(tensor_data)
         tensor_data = tensor_data.unsqueeze(0).unsqueeze(0)
-        tensor_data = self.tg(tensor_data)
         tensor_data = self.mel_transform(tensor_data)
         
 
