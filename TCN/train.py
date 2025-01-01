@@ -213,7 +213,8 @@ if __name__ == '__main__':
                       num_samples=44100,
                       device=device
                       )
- 
+    plot_features(dataset, 2000)
+
     for i in range(k):
         model = TCN(num_filters=4,
                     layers=layers,
@@ -236,8 +237,9 @@ if __name__ == '__main__':
                                 optimizer=optimizer,
                                 train_dataloader=train_dataloader,
                                 validation_dataloader=validation_dataloader,
-                                fold=i + 1
+                                fold=i + 1,
+                                do_plot_model=True
                                 )
         
-        results = model_trainer.train() 
+        results = model_trainer.train()
         del_objects(model, loss_fn, optimizer, train_dataloader, validation_dataloader, model_trainer)
