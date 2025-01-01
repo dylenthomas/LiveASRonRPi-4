@@ -3,4 +3,5 @@ full_dataset/
 full_dataset.zip
 runs/
 UnusedData/
-TCN/__pychache__
+TCN/__pycache__
+__pycache__
