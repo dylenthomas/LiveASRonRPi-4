@@ -61,8 +61,11 @@ class dataset(Dataset):
         signal = self.mel_transform(signal)
         signal = signal.view(64, 91)
 
+        #normalize data 
+        signal -= signal.mean()
+        signal /= signal.std()
+ 
         return signal, sample_class
-
 
     def _resample(self, signal, sample_rate):
         resampler = torchaudio.transforms.Resample(sample_rate, self.sample_rate).to(self.device)
@@ -89,3 +92,5 @@ if __name__ == '__main__':
 
     print(length)
     print(item.shape, class_)
+    print(item.mean())
+    print(item.std())

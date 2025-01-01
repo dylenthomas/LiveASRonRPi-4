@@ -1,0 +1,6 @@
+full_dataset/
+.DS_Store
+full_dataset.zip
+runs/
+UnusedData/
+TCN/__pychache__
