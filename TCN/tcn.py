@@ -90,12 +90,12 @@ class TCN(nn.Module):
 
                 fcl = nn.Sequential(
                         nn.Flatten(),
-                        linear
+                        linear,
+                        nn.Sigmoid() #only for classification
                         )
 
                 layer_list.append(fcl)
 
-        layer_list.append(nn.Sigmoid()) #Only for classificiation
         self.layer_list = nn.ModuleList(layer_list)
 
     def forward(self, x):

@@ -19,6 +19,7 @@ class dataset(Dataset):
         self.device = device
         self.mel_transform = torchaudio.transforms.MelSpectrogram(
             sample_rate=self.sample_rate,
+            win_length=978,
             n_fft=978, #computed to make the size of data 91
             n_mels=64
         ).to(self.device)
@@ -59,7 +60,7 @@ class dataset(Dataset):
 
         signal = self._edit_signal_length(signal)
         signal = self.mel_transform(signal)
-        signal = signal.view(64, 91)
+        signal = signal.view(signal.shape[1], signal.shape[2])
 
         #normalize data 
         signal -= signal.mean()
@@ -90,7 +91,4 @@ if __name__ == '__main__':
     length = rtrdDS.__len__()
     item, class_ = rtrdDS.__getitem__(2)
 
-    print(length)
-    print(item.shape, class_)
-    print(item.mean())
-    print(item.std())
+    print(item.shape)

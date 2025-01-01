@@ -5,7 +5,7 @@ import torchaudio
 import time
 
 class wake_word_listener():
-    def __init__(self, model_path: str, format=pyaudio.paInt16, rate=44100):
+    def __init__(self, model_path:str, format=pyaudio.paInt16, rate=44100, win_length=978):
         self.rate = rate
         self.p = pyaudio.PyAudio()
         self.device_index = self.get_device_index()
@@ -20,7 +20,8 @@ class wake_word_listener():
         self.model = torch.jit.load(model_path).eval()
         self.mel_transform = torchaudio.transforms.MelSpectrogram(
             sample_rate=rate,
-            n_fft=978,
+            win_length=win_length,
+            n_fft=978, #when win_length is 978 the time axis is 91 units long
             n_mels=64
         )
         

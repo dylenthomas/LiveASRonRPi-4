@@ -133,7 +133,7 @@ class Trainer:
 
         jit_model = torch.jit.script(self.model)
         jit_model.save(self.model_save_name)
-        
+       
         print(f'Model saved to {self.model_save_name}')
 
     def remove_model_params(self):
@@ -196,7 +196,7 @@ def del_objects(*args):
     """Delete training objects to clear memory after each fold"""
     for obj in args:
         del(obj)
-    
+        
 if __name__ == '__main__':
     k = 3
     batch_size = 64
@@ -207,7 +207,7 @@ if __name__ == '__main__':
               'res3': (256, 128),
               'res4': (128, 64),
               'fcl1': (91 * 64, 6)
-              }
+              } #number of layers for 91 units of receptive field
     dataset = Dataset(root_path='./full_dataset',
                       sample_rate=44100,
                       num_samples=44100,
