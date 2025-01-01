@@ -56,7 +56,6 @@ class TCN(nn.Module):
         self.available_layers = ['res', 'fcl']
 
         layer_list = []
-        channel_key_list = list(layers.keys())
         for i, key in enumerate(layers):
             for avail_key in self.available_layers:
                 found = 0
@@ -96,10 +95,11 @@ class TCN(nn.Module):
 
                 layer_list.append(fcl)
 
+        layer_list.append(nn.Sigmoid()) #Only for classificiation
         self.layer_list = nn.ModuleList(layer_list)
 
     def forward(self, x):
-        for i, layer in enumerate(self.layer_list):
+        for layer in self.layer_list:
             x = layer(x)
 
         return x
