@@ -1,0 +1,7 @@
+full_dataset/
+.DS_Store
+full_dataset.zip
+runs/
+UnusedData/
+TCN/__pycache__
+__pycache__
