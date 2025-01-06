@@ -200,7 +200,7 @@ def del_objects(*args):
 if __name__ == '__main__':
     k = 3
     batch_size = 64
-    epochs = 2 
+    epochs = 1 
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     layers = {'res1': (64, 128),
               'res2': (128, 256),
@@ -213,7 +213,7 @@ if __name__ == '__main__':
                       num_samples=44100,
                       device=device
                       )
-    plot_features(dataset, 2000)
+    #plot_features(dataset, 2000)
 
     for i in range(k):
         model = TCN(num_filters=4,
