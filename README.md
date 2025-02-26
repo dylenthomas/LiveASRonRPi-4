@@ -1,2 +1,3 @@
 # whisper
-Software for running whistle detection model on raspberry pi - whisper.
+
+Key Word Spotting (KWS) for controlling the lights in my room
