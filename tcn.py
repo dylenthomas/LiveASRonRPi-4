@@ -30,7 +30,7 @@ class TCN(nn.Module):
                           'res3': (32, 64),
                           'res4': (64, 32),
                           'res5': (32, 64),
-                          'fcl1': (187 * 64, 1)
+                          'fcl1': (64, 1)
                           }
 
                 model = TCN(num_filters=4,
@@ -95,11 +95,10 @@ class TCN(nn.Module):
         for layer in self.layer_list:
             x = layer(x)
 
-        # reshape for final linear layer
+        #combine the 0 and 2 dimensions and leave the channels untouched then transpose
         out = torch.cat([x[i, :, :] for i in range(x.shape[0])], dim = 1).transpose(0, 1).contiguous()
-        # forward pass of final linear layer
         out = self.linear(out).transpose(0, 1)
-		# reshape back to original format
+		#reshape back to original format
         out = torch.cat([out[:, i*x.shape[2]:(i+1)*x.shape[2]].unsqueeze(0) for i in range(x.shape[0])], dim = 0)
         return out
 

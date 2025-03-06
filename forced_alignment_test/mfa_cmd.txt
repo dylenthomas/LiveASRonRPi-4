@@ -1,0 +1,4 @@
+##This was used to make the example in this folder
+##mfa align path/to/dataset dictionary_name model_name path/to/aligned/dataset
+
+mfa align . english_us_arpa english_us_arpa .
