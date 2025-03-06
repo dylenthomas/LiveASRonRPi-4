@@ -1,7 +1,7 @@
 DATA_DIR = "/Volumes/EXTREME SSD/LibriSpeech"
 GT_PATH = "ground_truths"
-from torch.utils.data import Dataset
 
+from torch.utils.data import Dataset
 import os
 
 class LibriSpeechDataloader(Dataset):
