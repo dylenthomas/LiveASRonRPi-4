@@ -7,4 +7,7 @@ Speech To Text (STT) system for controlling systems in my room.
 * [X] Seperate the transcripts into individual files that correspond to each wav file
 * [X] Move the wav files and the individual transcripts to a seperate dataset
 * [X] Generate TextGrid alignment files
-* [ ] Use time stamps in alignment files to create continuous labels
+* [X] Use time stamps in alignment files to create continuous labels
+* [X] Create code to convert a TextGrid to encoded continuous ground truth data
+* [ ] Make dataloader
+* [ ] Make training code
