@@ -1,17 +1,15 @@
 import numpy as np
 
 class makeArrayFromTextGrid():
-    def __init__(self, sample_rate:int, output_path:str, dict_path:str):
+    def __init__(self, sample_rate:int, dict_path:str):
         """Parse a directory of TextGrid files and encodes as a numpy array where each sample corresponds to a word spoken 
 
         Args:
             file_path (str): path to TextGrid file
             sample_rate (int): sample rate the of the audio files
-            output_path (str): the path to output the csvs
             dict_path (str): the path to the dictionary used for encoding
         """
         self.sample_rate = sample_rate
-        self.output_path = output_path
         self.dict_path = dict_path
         self.load_dict()
         
@@ -61,8 +59,29 @@ class makeArrayFromTextGrid():
         return word_array
             
     def encode(self, text:str):
-        return self.dictionary[text] if text != '' else self.dictionary['<eps>'] 
-        
+        try:
+            return self.dictionary[text] if text != '' else self.dictionary['<eps>'] 
+        except KeyError: #If there is an appostrophe in the word that shouldn't be
+            text = text.replace("'", '')
+            try:
+                return self.dictionary[text]
+            except KeyError: #If the word is just not in the dictionary
+                self.add_to_dict(text)
+                return self.dictionary[text]
+            
+    def add_to_dict(self, text):
+        """Add an unknown word to the dictionary
+        """
+        print(f"{text} wasn't found in the provided dictionary, adding...")
+        #Add the term to the dictionary
+        with open(self.dict_path, 'a') as f:
+            f.write(f"{text}\t{len(self.dictionary)}\n")
+            f.close() 
+            
+        #Reload the dictionary
+        del(self.dictionary)
+        self.load_dict()
+                 
     def load_dict(self):
         """Load the dictionary and put it into a dict
         """
@@ -71,6 +90,7 @@ class makeArrayFromTextGrid():
             del(dictionary_list[len(dictionary_list) - 1]) #remove the empty string at the end
             f.close()
             
+        #Create python dictionary for the dictionary
         self.dictionary = {}
         for entry in dictionary_list:
             entry = entry.split('\t')
@@ -91,7 +111,7 @@ class makeArrayFromTextGrid():
 
         item_loc = []
         for i, line in enumerate(data):
-            if 'item' in line:
+            if 'item [' in line:
                 item_loc.append(i)
             
         del(item_loc[0]) #remove the item class identifier line
@@ -103,8 +123,7 @@ class makeArrayFromTextGrid():
             
         #Parse items
         all_item_info = []
-        for i in range(len(items)):
-            item = items[i]
+        for item in items:
             item = [_.replace(' ', '') for _ in item] #remove redundant spaces
             
             #Get item parameters
