@@ -13,20 +13,22 @@ class makeArrayFromTextGrid():
         self.dict_path = dict_path
         self.load_dict()
         
-    def processTextGrid(self, filename:str):
+    def processTextGrid(self, filename:str, len_file:int):
         """Process a given TextGrid file and return its contents in a numpy array
 
         Args:
             filename (str): path to the TextGrid file
+            len_file (int): lenght of the corresponding audio file
         """
         data = self.read_TextGrid(filename)
-        return self.create_array(data)
+        return self.create_array(data, len_file)
                     
-    def create_array(self, data:dict):
+    def create_array(self, data:dict, len_file:int):
         """Create a numpy array with extracted TextGrid data
 
         Args:
             data (dict): dictionary containing text grid data
+            len_file (int): length of the audio file to double check they match
 
         Raises:
             Exception: the TextGrid file contains non IntervalTier classes
@@ -35,6 +37,8 @@ class makeArrayFromTextGrid():
             if chunk['class'] == 'IntervalTier' and chunk['name'] == 'words':
                 data_len = float(chunk['xmax']) * self.sample_rate #Length of data in samples
                 data_len = int(data_len)
+                data_len += len_file - data_len #Make sure the targets will be same length as file 
+                 
                 num_items = int(chunk['intervals: size']) #Number of intervals found
                 word_array = np.empty([1, data_len], dtype=int)
                 

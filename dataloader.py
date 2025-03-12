@@ -22,6 +22,7 @@ class whisperDataLoader(Dataset):
 
         Args:
             root_dir (str): parent directory for all subjects
+            sample_rate (int): the sample rate to force onto every file
             device (str, optional): name of the device the model is being trained on. Defaults to 'cpu'.
         """
         
@@ -31,8 +32,9 @@ class whisperDataLoader(Dataset):
         
         self.input_paths, self.ground_truth_paths = self.get_all_data_paths_()
 
-        self.enforced_sample_rate = sample_rate      
+        self.enforced_sample_rate = sample_rate
         self.tg_processor = makeArrayFromTextGrid(self.enforced_sample_rate, "/Users/dylenthomas/Documents/whisper/dictionary/words.txt")
+
        
     def __len__(self):
         """Returns how many trials the dataset found
@@ -166,13 +168,14 @@ class whisperDataLoader(Dataset):
         input_tensor, sample_rate = torchaudio.load(input_path)
         #Ensure that every audio file follows the same sample rate
         if self.enforced_sample_rate != sample_rate:
-            resampler = torchaudio.transforms.Resample(sample_rate, self.enforced_sample_rate)
+            resampler = torchaudio.transforms.Resample(sample_rate, self.enforced_sample_rate).to(self.device)
             input_tensor = resampler(input_tensor)
+            del(resampler)
         
         gt_path = self.get_gt_path_from_input_path_(input_path)
-        gt_tensor = torch.Tensor(self.tg_processor.processTextGrid(gt_path))
+        gt_tensor = torch.Tensor(self.tg_processor.processTextGrid(gt_path, input_tensor.shape[-1]))
         
-        return input_tensor, gt_tensor
+        return input_tensor.unsqueeze(0), gt_tensor.unsqueeze(0)
     
     def get_gt_path_from_input_path_(self, input_path):
         input_path = input_path.split('\\' if sys.platform == 'win32' else '/')
@@ -203,9 +206,21 @@ class whisperDataLoader(Dataset):
         return input_paths, ground_truth_paths
     
 if __name__ == '__main__':
-    dl = whisperDataLoader("/Volumes/EXTREME SSD/LibriSpeechWAV")
-    dl.partition_data(['198'], ['227'])
+    dl = whisperDataLoader("/Volumes/EXTREME SSD/LibriSpeechWAV", 44100)
+    dl.partition_data(None, None)
     
-    indxs = [_ for _ in range(1)]
-    print(dl[('Tr', indxs)])
+    indxs = [_ for _ in range(len(dl.input_paths))]
+    chunk_size = 1000
+    chunks = len(indxs) // chunk_size
+    remainder = len(indxs) % chunk_size
+    
+    last = 0
+    for i in range(chunks):
+        chunk = indxs[last:last+chunk_size]
+        last += chunk_size
+    
+        print(dl[('Tr', chunk)])
+    
+    chunk = indxs[last:last+remainder]
+    print(dl[('Tr', chunk)])
     
