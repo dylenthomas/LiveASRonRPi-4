@@ -10,5 +10,5 @@ Speech To Text (STT) system for controlling systems in my room.
 * [X] Use time stamps in alignment files to create continuous labels
 * [X] Create code to convert a TextGrid to encoded continuous ground truth data
 * [X] Make dataloader
-* [ ] Figure out why dataloader uses almost 100gb of memory when using more than 1 input indx
+* [X] Figure out why dataloader uses almost 100gb of memory when using more than 1 input indx
 * [ ] Make training code
