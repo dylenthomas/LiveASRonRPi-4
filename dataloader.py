@@ -165,7 +165,11 @@ class whisperDataLoader(Dataset):
         Returns:
             Torch.Tensor: Input and Ground Truth tensors
         """
+        sys.stdout.write("Loading: %s   \r" % (input_path) )
+        sys.stdout.flush()
+        
         input_tensor, sample_rate = torchaudio.load(input_path)
+        input_tensor = input_tensor.to(self.device)
         #Ensure that every audio file follows the same sample rate
         if self.enforced_sample_rate != sample_rate:
             resampler = torchaudio.transforms.Resample(sample_rate, self.enforced_sample_rate).to(self.device)
@@ -174,6 +178,7 @@ class whisperDataLoader(Dataset):
         
         gt_path = self.get_gt_path_from_input_path_(input_path)
         gt_tensor = torch.Tensor(self.tg_processor.processTextGrid(gt_path, input_tensor.shape[-1]))
+        gt_tensor = gt_tensor.to(device=self.device)
         
         return input_tensor.unsqueeze(0), gt_tensor.unsqueeze(0)
     

@@ -1,19 +1,16 @@
+from tcn import TCN
+from dataloader import whisperDataLoader
 import logging
 import sys
-import json
 import os
 import pickle 
-
 import torch
 import torch.nn as nn
-from TCN.tcn import TCN
 from tqdm import tqdm
 import matplotlib.pyplot as plt
-from dataset import strokeDataset 
 from torch.nn.utils.parametrize import remove_parametrizations
-
-from data_vars import RECEPTIVE_FIELD, MOMENT_OFFSET
-
+from torch.utils.data import Dataset
+from torch import optim
 #os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 
 class Trainer:
@@ -23,28 +20,25 @@ class Trainer:
                  device:str,
                  epochs:int,
                  patience:int,
-                 loss_fn,
-                 optimizer,
+                 loss_fn:nn.Module,
+                 optimizer:optim,
                  model,
-                 dataset,
-                 num_trials_per_input,
+                 dataset:Dataset,
+                 num_trials_per_input:int,
                  ):
+        """_summary_
 
+        Args:
+            model_name (str): Name of the model for saving to a file
+            device (str): The device being trained on
+            epochs (int): The number of epochs to train for
+            patience (int): The patience of the model to check for overfitting (in number of epochs)
+            loss_fn (nn.Module): The loss function for training
+            optimizer (nn.Module): The optimizer for training
+            model (nn.Module): TCN model to be trained
+            dataset (Dataset): The dataloader for all data
+            num_trials_per_input (int): The desired number of trials to be loaded per input
         """
-            model_name(str): the name of the file to save the model to when training is complete
-            device(str): the device the model is being trained on
-            epochs(int): how many iterations the model is trained
-            batch_size(int): the amount of data in one batch for training the model
-            patience(int): how long the early stopper waits to stop the model
-            loss_fn: loss function for training
-            optmizer: optimizer function for training
-            model: model to be trained
-            train_dataset: dataset the model is to be trained on
-            validation_dataset: dataset that is used to validate model preformance for hyper-parameter tuning
-            test_dataset: dataset that is used to test model preformance on novel data
-            test_trials: a list of trial names being used for testing
-        """
-
         #set up logger for outputs
         logging.basicConfig(stream=sys.stdout, level=logging.DEBUG, format='%(name)s: %(message)s')
         ###
@@ -249,143 +243,69 @@ class Trainer:
         #Save the figure as a pickle file for interactability 
         pickle.dump(fig, open(f"{file_name}.fig.pickle", 'wb'))
 
-class SubjectIndependenceTrainer:
+def get_device():
+    "Return the device type for training"
+    if torch.cuda.is_available():
+        device = "cuda"
+    elif torch.backends.mps.is_available():
+        device = "mps"
+    else:
+        device = "cpu"
+        
+    print(f"Using device:[{device}]")
+    return device
+
+###VARS
+NUM_FILTERS = 5
+LAYERS = {'res1': (1, 2),'res2': (2, 4),'res3': (4, 8),'res4': (8, 16),'res5': (16, 32),'fcl1': (32, 1)}
+DROPOUT_PROB = 0.15
+CHANNELS_PER_HIDDEN_LAYER = 80
+RES_MAPPING = True
+WEIGHT_INIT_NAME = 'random'
+
+LOSS_FN = "MSELoss"
+OPTIMIZER = "Adam"
+LR = 5e-5
+
+MODEL_NAME = "whisper"
+DEVICE = get_device()
+EPOCHS = 1
+PATIENCE = 25
+DATALOADER = whisperDataLoader(root_dir="/Volumes/EXTREME SSD/LibriSpeechWAV",
+                               sample_rate=44100,
+                               device=DEVICE
+                               )
+NUM_TRIALS_PER_INPUT = 1
+
+TEST_DATA = None
+VALIDATION_DATA = None
+###
+
+if __name__ == "__main__":
+    model = TCN(
+        num_filters=NUM_FILTERS,
+        layers=LAYERS,
+        dropout_prob=DROPOUT_PROB,
+        channels_per_hidden_layer=CHANNELS_PER_HIDDEN_LAYER,
+        res_mapping=RES_MAPPING,
+        weight_init_name=WEIGHT_INIT_NAME
+    ).to(device=DEVICE)
     
-    """Create seperate models and trainers for each subject, with MSE Loss function and Adam optimizer"""
-    def __init__(self,
-                 device:str,
-                 epochs:int,
-                 batch_size:int,
-                 patience:int,
-                 lr:float,
-                 num_filters:int,
-                 layers:dict,
-                 dropout_prob:float,
-                 channels_per_hidden_layer:int,
-                 sensor_list:list,
-                 res_mapping:bool,
-                 dataset_root,
-                 weight_init_name=None,
-                 num_trials_per_input=1
-                 ):
-
-        """
-            dataset: dataset class containing all the data
-            subjects(list): should be a list of all the subjects in the training dataset
-            device(str): device to train the model on
-            epochs(int): number of epochs to train the model through
-            batch_size(int): amount of data in a single batch for training final model
-            patience(int): how long early stopping waits before stopping the model
-            lr(float): learning rate for the optimizer
-
-            *The rest of the variables are described in the TCN class*
-        """
-
-        self.sensor_list = sensor_list[1]
-        self.input_channels = len(self.sensor_list)
-        self.sensor_id = sensor_list[0]
-        self.device = device
-        print("Using: ", self.device)
-        
-        self.epochs = epochs
-        self.patience = patience
-        self.lr = lr
-        
-        self.num_filters=num_filters
-        self.layers = layers
-        self.dropout_prob = dropout_prob
-        self.channels_per_hidden_layer = channels_per_hidden_layer
-        self.res_mapping = res_mapping
-        self.num_trials_per_input = num_trials_per_input
-        self.weight_init_name = weight_init_name
-        
-        self.dataset = strokeDataset(root_dir=dataset_root,
-                                     batch_size=batch_size,
-                                     receptive_field=RECEPTIVE_FIELD,
-                                     target_offset=MOMENT_OFFSET, 
-                                     input_cols=self.sensor_list,
-                                     target_cols=['hip_flexion_r_moment', 'hip_flexion_l_moment'],
-                                     device=self.device
-                                )
-        assert len(self.dataset) > 0, "No data found, likely incorrect file path"
-        
-        self.loss_fn = nn.MSELoss()
-        self.layers['res1'] = (len(self.sensor_list), self.layers['res1'][1])
-
-    def train(self):
-        """Train all models"""
-
-        avg_val_loss_dict = {}
-        avg_epochs = []
-        participants = self.dataset.persons
-        for person in participants:
-            model_name = person + '_' + self.sensor_id 
-
-            self.dataset.partition_data(test_trials=['normal_walk'], validation_trials=[person])
-            
-            model = TCN(num_filters=self.num_filters,
-                        layers=self.layers,
-                        dropout_prob=self.dropout_prob,
-                        channels_per_hidden_layer=self.channels_per_hidden_layer,
-                        res_mapping=self.res_mapping,
-                        weight_init_name=self.weight_init_name if self.weight_init_name != None else 'xavier_normal'
-                        ).to(device=self.device)
-            optimizer = torch.optim.Adam(model.parameters(), lr=self.lr)
-            
-            trainer = Trainer(model_name=model_name,
-                              device=self.device,
-                              epochs=self.epochs,
-                              patience=self.patience,
-                              loss_fn=self.loss_fn,
-                              optimizer=optimizer,
-                              model=model,
-                              dataset=self.dataset,
-                              num_trials_per_input=self.num_trials_per_input
-                              )
-
-            avg_val_loss_dict[person], epochs = trainer.train()
-            avg_epochs.append(epochs)
-            
-            #delete objects to free memory
-            del model 
-            exit() #stop after training one model for debugging purposes 
-        print('='*100)
-        print(f'Average Loss by Model: {avg_val_loss_dict}')
-        self.write_avg_json(avg_val_loss_dict)
-        avg_epochs = sum(avg_epochs) // len(avg_epochs)
-
-        #Allocate all data for training
-        self.dataset.partition_data(test_trials=None, validation_trials=None)
-
-        #Train single model on all data and the number of epochs being the average from cross validation training
-        final_model = TCN(num_filters=self.num_filters,
-                          layers=self.layers,
-                          dropout_prob=self.dropout_prob,
-                          channels_per_hidden_layer=self.channels_per_hidden_layer,
-                          res_mapping=self.res_mapping,
-                          weight_init_name=self.weight_init_name if self.weight_init_name != None else 'xavier_normal'
-                          ).to(device=self.device)
-
-        model_name = 'full_subject_model' + '_' + self.sensor_id
-        
-        trainer = Trainer(model_name=model_name,
-                          device=self.device,
-                          epochs=avg_epochs,
-                          patience=self.patience,
-                          loss_fn=self.loss_fn,
-                          optimizer=optimizer,
-                          model=final_model,
-                          dataset=self.dataset,
-                          num_trials_per_input=self.num_trials_per_input
-                          )
-        trainer.train()
-
-        print('='*50)
-        print(f'Finished run for {self.sensor_id}')
-
-    def write_avg_json(self, avg_val_loss_dict):
-        """Write the average loss per model to a json file"""
-
-        obj = json.dumps(avg_val_loss_dict, indent=4)
-        with open('./figures/average_subj_indep_loss.json', 'w') as file:
-            file.write(obj)
+    loss_fn = getattr(nn, LOSS_FN)()
+    optimizer = getattr(torch.optim, OPTIMIZER)(model.parameters(), lr=LR)
+    
+    trainer = Trainer(
+        model_name=MODEL_NAME,
+        device=DEVICE,
+        epochs=EPOCHS,
+        patience=PATIENCE,
+        loss_fn=loss_fn,
+        optimizer=optimizer,
+        model=model,
+        dataset=DATALOADER,
+        num_trials_per_input=NUM_TRIALS_PER_INPUT
+    )
+    
+    DATALOADER.partition_data(test_trials=TEST_DATA, validation_trials=VALIDATION_DATA)
+    
+    trainer.train()
