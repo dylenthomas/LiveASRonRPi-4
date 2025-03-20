@@ -181,6 +181,9 @@ class whisperDataLoader(Dataset):
         gt_tensor = torch.Tensor(self.tg_processor.processTextGrid(gt_path, input_tensor.shape[-1]))
         gt_tensor = gt_tensor.to(device=self.device)
         
+        #Normalize the data
+        input_tensor = (input_tensor - torch.mean(input_tensor)) / torch.std(input_tensor)
+        
         return input_tensor.unsqueeze(0), gt_tensor.unsqueeze(0)
     
     def get_gt_path_from_input_path_(self, input_path):
