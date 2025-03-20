@@ -58,33 +58,33 @@ class makeArrayFromTextGrid():
                     word_array[0, interval_start:interval_end] = self.encode(info)
 
             elif chunk['class'] != 'IntervalTier':
-                raise Exception(f'Unknown class type:"{chunk['class']}"')
+                raise Exception('Unknown class type:{}'.format(chunk['class']))
             
         return word_array
             
     def encode(self, text:str):
         try:
-            return self.dictionary[text] if text != '' else self.dictionary['<eps>'] 
+            return self.dictionary[text] if text != '' else self.dictionary['<eps>'] #eps is for silence 
         except KeyError: #If there is an appostrophe in the word that shouldn't be
             text = text.replace("'", '')
             try:
                 return self.dictionary[text]
-            except KeyError: #If the word is just not in the dictionary
-                self.add_to_dict(text)
-                return self.dictionary[text]
+            except KeyError: #If the word is just not in the dictionary (i.e. unknown)
+                #self.add_to_dict(text)
+                return self.dictionary['<unk>']
             
-    def add_to_dict(self, text):
-        """Add an unknown word to the dictionary
-        """
-        print(f"{text} wasn't found in the provided dictionary, adding...")
-        #Add the term to the dictionary
-        with open(self.dict_path, 'a') as f:
-            f.write(f"{text}\t{len(self.dictionary)}\n")
-            f.close() 
-            
-        #Reload the dictionary
-        del(self.dictionary)
-        self.load_dict()
+    #def add_to_dict(self, text):
+    #    """Add an unknown word to the dictionary
+    #    """
+    #    print(f"{text} wasn't found in the provided dictionary, adding...")
+    #    #Add the term to the dictionary
+    #    with open(self.dict_path, 'a') as f:
+    #        f.write(f"{text}\t{len(self.dictionary)}\n")
+    #        f.close() 
+    #        
+    #    #Reload the dictionary
+    #    del(self.dictionary)
+    #    self.load_dict()
                  
     def load_dict(self):
         """Load the dictionary and put it into a dict

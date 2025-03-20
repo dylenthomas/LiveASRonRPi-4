@@ -1,13 +1,12 @@
 from tcn import TCN
 from dataloader import whisperDataLoader
-import logging
 import sys
 import os
 import pickle 
 import torch
 import torch.nn as nn
-from tqdm import tqdm
 import matplotlib.pyplot as plt
+import random
 from torch.nn.utils.parametrize import remove_parametrizations
 from torch.utils.data import Dataset
 from torch import optim
@@ -39,9 +38,6 @@ class Trainer:
             dataset (Dataset): The dataloader for all data
             num_trials_per_input (int): The desired number of trials to be loaded per input
         """
-        #set up logger for outputs
-        logging.basicConfig(stream=sys.stdout, level=logging.DEBUG, format='%(name)s: %(message)s')
-        ###
         self.model_name = model_name
         self.device = device
         self.epochs = epochs
@@ -68,8 +64,8 @@ class Trainer:
         completed_epochs = 0
         for epoch in range(self.epochs):
             print('=' * 100)
-            logging.info(f'EPOCH { epoch + 1 }/{self.epochs}')
-            logging.info(f'MODEL NAME: {self.model_name}')
+            print(f'EPOCH { epoch + 1 }/{self.epochs}')
+            print(f'MODEL NAME: {self.model_name}')
 
             train_loss = self.train_one_epoch()
             completed_epochs += 1
@@ -83,15 +79,15 @@ class Trainer:
                 print(f'EARLY STOP COUNT: {self.counter}')
 
                 if self.early_stop(validation_loss):
-                    logging.info('EARLY STOP CRITERIA REACHED')
+                    print('EARLY STOP CRITERIA REACHED')
                     break
 
             else:
                 print(f'TRAIN LOSS: {train_loss}')
                 train_loss_list.append(train_loss)
                 
-        if len(self.dataset.test_paths) > 0:
-            self.test()
+        #if len(self.dataset.test_paths) > 0:
+        #    self.test()
 
         return sum(val_loss_list) / len(val_loss_list) if len(val_loss_list) > 0 else None, epoch + 1
 
@@ -99,7 +95,7 @@ class Trainer:
         """Test the model after training is complete"""
         
         self.model.eval()
-        for t in tqdm(range(len(self.dataset.test_paths)), desc='Testing'):
+        for t in range(len(self.dataset.test_paths)):
             inputs, targets = self.dataset[('Ts', t)]
 
             with torch.no_grad():
@@ -145,7 +141,9 @@ class Trainer:
         trials = [[x + (self.num_trials_per_input*_) for x in range(self.num_trials_per_input)] for _ in range(num_inputs)]
         if remainder_trials > 0: trials.append([x + (3*len(trials)) for x in range(remainder_trials)])
         
-        for trial in tqdm(trials, desc='Training'):
+        x = 1
+        for trial in trials:
+            print("Trial: {}/{}".format(x, len(trials)))
             inputs, targets = self.dataset[('Tr', trial)]
             
             pred = self.model(inputs)
@@ -154,7 +152,7 @@ class Trainer:
             self.optimizer.zero_grad()
             loss.backward()
             self.optimizer.step()
-            
+            x += 1
             
         return loss.item()
    
@@ -162,7 +160,7 @@ class Trainer:
         """Validate the model on novel subject data"""
         
         self.model.eval()
-        for t in tqdm(range(len(self.dataset.validation_paths)), desc='Validating'):
+        for t in range(len(self.dataset.validation_paths)):
             inputs, targets = self.dataset[('V', t)]
             """
             for i in range(inputs.shape[0]):
@@ -200,7 +198,7 @@ class Trainer:
 
         scripted_model = torch.jit.script(self.model)
         torch.jit.save(scripted_model, os.path.join(self.model_path, f'{self.model_name}.pt'))
-        logging.info(f'Model "{self.model_name}" successfully saved.')
+        print(f'Model "{self.model_name}" successfully saved.')
 
     def rmse(self, preds, targets):
         return torch.sqrt(torch.mean((preds - targets) ** 2)).item()
@@ -271,14 +269,26 @@ MODEL_NAME = "whisper"
 DEVICE = get_device()
 EPOCHS = 1
 PATIENCE = 25
-DATALOADER = whisperDataLoader(root_dir="/Volumes/EXTREME SSD/LibriSpeechWAV",
+DATALOADER = whisperDataLoader(root_dir='/Volumes/EXTREME SSD/LibriSpeechWAV',#"/storage/home/hcoda1/7/dliverman3/p-ayoung63-0/whisper_pjct/LibriSpeechWAV/",
+                               dict_pth="/Users/dylenthomas/Documents/whisper/dictionary/words.txt",#"/storage/home/hcoda1/7/dliverman3/p-ayoung63-0/whisper_pjct/whisper/dictionary/words.txt",
                                sample_rate=44100,
                                device=DEVICE
                                )
 NUM_TRIALS_PER_INPUT = 1
 
-TEST_DATA = None
-VALIDATION_DATA = None
+TEST_DATA = random.sample(DATALOADER.input_paths, 20000)
+DATALOADER.partition_data(test_trials=TEST_DATA, validation_trials=None)
+
+#print("Test: {}".format(len(DATALOADER.test_paths)))
+#print("Train: {}".format(len(DATALOADER.train_paths)))
+#print("Validation: {}".format(len(DATALOADER.validation_paths)))
+
+VALIDATION_DATA = random.sample(list(DATALOADER.train_paths), len(DATALOADER.train_paths)//2)
+DATALOADER.partition_data(test_trials=TEST_DATA, validation_trials=VALIDATION_DATA)
+
+#print("Test: {}".format(len(DATALOADER.test_paths)))
+#print("Train: {}".format(len(DATALOADER.train_paths)))
+#print("Validation: {}".format(len(DATALOADER.validation_paths)))
 ###
 
 if __name__ == "__main__":
@@ -306,6 +316,5 @@ if __name__ == "__main__":
         num_trials_per_input=NUM_TRIALS_PER_INPUT
     )
     
-    DATALOADER.partition_data(test_trials=TEST_DATA, validation_trials=VALIDATION_DATA)
-    
+    #DATALOADER.partition_data(test_trials=TEST_DATA, validation_trials=VALIDATION_DATA)
     trainer.train()

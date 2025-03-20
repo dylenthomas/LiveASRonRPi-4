@@ -15,6 +15,7 @@ from utils.TextGrid_utils import makeArrayFromTextGrid
 class whisperDataLoader(Dataset):
     def __init__(self,
                  root_dir:str,
+                 dict_pth:str,
                  sample_rate:int = 441000,
                  device:str='cpu',
                  ):
@@ -22,6 +23,7 @@ class whisperDataLoader(Dataset):
 
         Args:
             root_dir (str): parent directory for all subjects
+            dict_pth (str): path to the dictionary txt file
             sample_rate (int): the sample rate to force onto every file
             device (str, optional): name of the device the model is being trained on. Defaults to 'cpu'.
         """
@@ -31,10 +33,12 @@ class whisperDataLoader(Dataset):
         self.data_dirs= list(os.listdir(self.root_dir)) #ground truth and input directories
         
         self.input_paths, self.ground_truth_paths = self.get_all_data_paths_()
-
+        
         self.enforced_sample_rate = sample_rate
-        self.tg_processor = makeArrayFromTextGrid(self.enforced_sample_rate, "/Users/dylenthomas/Documents/whisper/dictionary/words.txt")
+        self.tg_processor = makeArrayFromTextGrid(self.enforced_sample_rate, dict_pth)
 
+        self.test_paths = []
+        self.validation_paths = []
        
     def __len__(self):
         """Returns how many trials the dataset found
@@ -98,8 +102,8 @@ class whisperDataLoader(Dataset):
             validation_trials (List[str]): list of trials to reserve for the validation dataset. Defaults to None (no validation dataset)
         """
         #use sets for easy duplicate comparison between the test and validation sets 
-        self.test_paths = set() 
-        self.validation_paths = set()
+        self.test_paths = set(self.test_paths) 
+        self.validation_paths = set(self.validation_paths)
       
         #allocate paths to test dataset
         if test_trials is not None:
@@ -165,9 +169,6 @@ class whisperDataLoader(Dataset):
         Returns:
             Torch.Tensor: Input and Ground Truth tensors
         """
-        sys.stdout.write("Loading: %s   \r" % (input_path) )
-        sys.stdout.flush()
-        
         input_tensor, sample_rate = torchaudio.load(input_path)
         input_tensor = input_tensor.to(self.device)
         #Ensure that every audio file follows the same sample rate
