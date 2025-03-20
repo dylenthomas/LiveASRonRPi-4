@@ -267,14 +267,14 @@ LR = 5e-5
 
 MODEL_NAME = "whisper"
 DEVICE = get_device()
-EPOCHS = 1
+EPOCHS = 50
 PATIENCE = 25
 DATALOADER = whisperDataLoader(root_dir='/Volumes/EXTREME SSD/LibriSpeechWAV',#"/storage/home/hcoda1/7/dliverman3/p-ayoung63-0/whisper_pjct/LibriSpeechWAV/",
                                dict_pth="/Users/dylenthomas/Documents/whisper/dictionary/words.txt",#"/storage/home/hcoda1/7/dliverman3/p-ayoung63-0/whisper_pjct/whisper/dictionary/words.txt",
-                               sample_rate=44100,
+                               sample_rate=16000,
                                device=DEVICE
                                )
-NUM_TRIALS_PER_INPUT = 1
+NUM_TRIALS_PER_INPUT = 10
 
 TEST_DATA = random.sample(DATALOADER.input_paths, 20000)
 DATALOADER.partition_data(test_trials=TEST_DATA, validation_trials=None)
