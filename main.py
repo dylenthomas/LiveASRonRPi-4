@@ -143,7 +143,7 @@ class Trainer:
         
         x = 1
         for trial in trials:
-            print("Trial: {}/{}".format(x, len(trials)))
+            #print("Trial: {}/{}".format(x, len(trials)))
             inputs, targets = self.dataset[('Tr', trial)]
             
             pred = self.model(inputs)

@@ -11,4 +11,5 @@ Speech To Text (STT) system for controlling systems in my room.
 * [X] Create code to convert a TextGrid to encoded continuous ground truth data
 * [X] Make dataloader
 * [X] Figure out why dataloader uses almost 100gb of memory when using more than 1 input indx
-* [ ] Make training code
+* [X] Make training code
+* [ ] Figure out why the loss is outrageously high
