@@ -39,6 +39,10 @@ class whisperDataLoader(Dataset):
 
         self.test_paths = []
         self.validation_paths = []
+        
+        dict_len = self.get_dict_len_(dict_pth)
+        digits = len(str(dict_len))
+        self.tens = 10 ** (digits - 1) #Divide all the ground truths by this number to make them all < 1 but > 0
        
     def __len__(self):
         """Returns how many trials the dataset found
@@ -180,6 +184,7 @@ class whisperDataLoader(Dataset):
         gt_path = self.get_gt_path_from_input_path_(input_path)
         gt_tensor = torch.Tensor(self.tg_processor.processTextGrid(gt_path, input_tensor.shape[-1]))
         gt_tensor = gt_tensor.to(device=self.device)
+        gt_tensor = gt_tensor / self.tens
         
         #Normalize the data
         input_tensor = (input_tensor - torch.mean(input_tensor)) / torch.std(input_tensor)
@@ -214,6 +219,12 @@ class whisperDataLoader(Dataset):
             
         return input_paths, ground_truth_paths
     
+    def get_dict_len_(self, dict_pth):
+        with open(dict_pth, 'r') as f:
+            dictionary = f.read().split('\n')
+            f.close()
+        return len(dictionary)
+
 if __name__ == '__main__':
     dl = whisperDataLoader("/Volumes/EXTREME SSD/LibriSpeechWAV", 44100)
     dl.partition_data(None, None)
