@@ -173,6 +173,7 @@ class Trainer:
             """
             with torch.no_grad():
                 pred = self.model(inputs)
+                print("Validation:{}".format(pred))
                 loss = self.loss_fn(pred, targets)
                      
         self.model.train()
@@ -317,4 +318,7 @@ if __name__ == "__main__":
     )
     
     #DATALOADER.partition_data(test_trials=TEST_DATA, validation_trials=VALIDATION_DATA)
-    trainer.train()
+    avg_val_loss = trainer.train()
+    print("Average Validation Loss: {}".format(avg_val_loss))
+    
+    trainer.test()
