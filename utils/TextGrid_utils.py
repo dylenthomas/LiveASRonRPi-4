@@ -11,6 +11,8 @@ class makeArrayFromTextGrid():
         """
         self.sample_rate = sample_rate
         self.dict_path = dict_path
+        self.sample_len = None
+        
         self.load_dict()
         
     def processTextGrid(self, filename:str, len_file:int):
@@ -35,6 +37,9 @@ class makeArrayFromTextGrid():
         """
         for chunk in data:
             if chunk['class'] == 'IntervalTier' and chunk['name'] == 'words':
+                if self.sample_len is not None:
+                    self.sample_rate = self.sample_len / float(chunk['xmax'])
+                
                 data_len = float(chunk['xmax']) * self.sample_rate #Length of data in samples
                 data_len = int(data_len)
                 data_len += len_file - data_len #Make sure the targets will be same length as file 
@@ -91,7 +96,7 @@ class makeArrayFromTextGrid():
         """
         with open(self.dict_path, 'r') as f:
             dictionary_list = f.read().replace(' ', '').split('\n')
-            del(dictionary_list[len(dictionary_list) - 1]) #remove the empty string at the end
+            del dictionary_list[len(dictionary_list) - 1] #remove the empty string at the end
             f.close()
             
         #Create python dictionary for the dictionary

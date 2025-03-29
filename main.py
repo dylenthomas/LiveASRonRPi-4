@@ -173,7 +173,6 @@ class Trainer:
             """
             with torch.no_grad():
                 pred = self.model(inputs)
-                print("Validation:{}".format(pred))
                 loss = self.loss_fn(pred, targets)
                      
         self.model.train()
@@ -256,7 +255,13 @@ def get_device():
 
 ###VARS
 NUM_FILTERS = 5
-LAYERS = {'res1': (1, 2),'res2': (2, 4),'res3': (4, 8),'res4': (8, 16),'res5': (16, 32),'fcl1': (32, 1)}
+LAYERS = {'res1': (257, 512),
+          'res2': (512, 256),
+          'res3': (256, 128),
+          'res4': (128, 64),
+          'res5': (64, 32),
+          'fcl1': (32, 1)
+          }
 DROPOUT_PROB = 0.15
 CHANNELS_PER_HIDDEN_LAYER = 80
 RES_MAPPING = True
@@ -275,9 +280,9 @@ DATALOADER = whisperDataLoader(root_dir='/Volumes/EXTREME SSD/LibriSpeechWAV',#"
                                sample_rate=16000,
                                device=DEVICE
                                )
-NUM_TRIALS_PER_INPUT = 10
+NUM_TRIALS_PER_INPUT = 5
 
-TEST_DATA = random.sample(DATALOADER.input_paths, 20000)
+TEST_DATA = random.sample(DATALOADER.input_paths, 24000)
 DATALOADER.partition_data(test_trials=TEST_DATA, validation_trials=None)
 
 #print("Test: {}".format(len(DATALOADER.test_paths)))

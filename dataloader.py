@@ -7,6 +7,7 @@ from typing import List, Tuple
 import torch
 import torchaudio
 from torch.utils.data import Dataset
+import torchaudio.transforms as T
 
 from utils.TextGrid_utils import makeArrayFromTextGrid
 
@@ -36,6 +37,8 @@ class whisperDataLoader(Dataset):
         
         self.enforced_sample_rate = sample_rate
         self.tg_processor = makeArrayFromTextGrid(self.enforced_sample_rate, dict_pth)
+        
+        self.spectrogram = T.Spectrogram(n_fft=512).to(device=self.device)
 
         self.test_paths = []
         self.validation_paths = []
@@ -181,15 +184,18 @@ class whisperDataLoader(Dataset):
             input_tensor = resampler(input_tensor)
             del(resampler)
         
+        input_tensor = self.spectrogram(input_tensor)
+        #Normalize the data
+        input_tensor = (input_tensor - torch.mean(input_tensor)) / torch.std(input_tensor)
+        
         gt_path = self.get_gt_path_from_input_path_(input_path)
+        self.tg_processor.sample_len = input_tensor.shape[-1]
         gt_tensor = torch.Tensor(self.tg_processor.processTextGrid(gt_path, input_tensor.shape[-1]))
         gt_tensor = gt_tensor.to(device=self.device)
         gt_tensor = gt_tensor / self.tens
         
-        #Normalize the data
-        input_tensor = (input_tensor - torch.mean(input_tensor)) / torch.std(input_tensor)
-        
-        return input_tensor.unsqueeze(0), gt_tensor.unsqueeze(0)
+ 
+        return input_tensor, gt_tensor.unsqueeze(0)
     
     def get_gt_path_from_input_path_(self, input_path):
         input_path = input_path.split('\\' if sys.platform == 'win32' else '/')
