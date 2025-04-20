@@ -10,7 +10,7 @@ int main(int argc, char *argv[]) {
     unsigned int sample_rate = 44100;
     short buf[128]; /*init an array of shorts named buf that can hold 128 values (which is 256 bytes fun fact)*/
     snd_pcm_t *capture_handle;
-    snd_pcm_hw_params_t *hw_params;
+    snd_pcm_hw_params_t *hw_params; /* stores all the configurations for the audio device setup */
 
     /* attempt to reach and open the device */
     if ((err = snd_pcm_open(&capture_handle, argv[1], SND_PCM_STREAM_CAPTURE, 0)) < 0) {
@@ -43,10 +43,34 @@ int main(int argc, char *argv[]) {
     }
 
     /* set the sample rate */
+    /* this function sends the requested sample rate to the audio device 
+       then changes it to the nearest supported sample rate and returns that value
+       dir (the last value passed) will be changed based on the rate chosen, and passing 0 means you don't care about the rate chosen */
     if ((err = snd_pcm_hw_params_set_rate_near(capture_handle, hw_params, &sample_rate, 0)) < 0) {
         fprintf(stderr, "cannot set sample rate (%s)\n", snd_strerror);
         exit(1);
     }
+
+    /* attempt to set number of channels */
+    if ((err = snd_pcm_hw_params_set_channels(capture_handle, hw_params, 2)) < 0) {
+        fprintf(stderr, "cannot set channel count (%s)\n", snd_strerror(err));
+        exit(1);
+    }
+
+    /* apply all the previously set configurations to the sound card */
+    if ((err = snd_pcm_hw_params(capture_handle, hw_params)) < 0) {
+        fprintf(stderr, "cannot set parameters (%s)\n", snd_strerror(err));
+        exit(1);
+    }
+
+    /* free the memory used up by the hw_params struct */
+    snd_pcm_hw_params_free(hw_params);
+
+
+
+
+
+
 
     return 0;
 }
