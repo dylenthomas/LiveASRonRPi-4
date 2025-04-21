@@ -29,6 +29,8 @@ with torch.inference_mode():
     emission, _ = model(waveform)
 
 decoder = GreedyCTCDecoder(labels=bundle.get_labels())
+print(bundle.get_labels())
+print(type(bundle.get_labels()))
 transcript = decoder(emission[0])
 print(transcript)
 
