@@ -9,6 +9,8 @@ from keras import layers
 
 pattern_wav_name = re.compile(r'[^/\\\.]+)')
 
+#https://keras.io/examples/audio/transformer_asr/
+
 class TokenEmbedding(layers.Layer):
     def __init__(self, num_vocab=1000, maxlen=100, num_hid=64):
         super().__init__()
