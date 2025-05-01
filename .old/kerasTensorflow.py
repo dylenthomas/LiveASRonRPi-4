@@ -7,7 +7,9 @@ import tensorflow as tf
 import keras
 from keras import layers
 
-pattern_wav_name = re.compile(r'[^/\\\.]+)')
+from glob import glob
+
+pattern_wav_name = re.compile(r'([^/\\\.]+)')
 
 #https://keras.io/examples/audio/transformer_asr/
 
@@ -101,3 +103,133 @@ class TransformerDecoder(layers.Layer):
         ffn_out_norm = self.layernorm3(enc_out_norm, self.ffn_dropout(ffn_out))
 
         return ffn_out_norm
+    
+class Transformer(keras.Model):
+    def __init__(self,
+                  num_hid=64,
+                  num_head=2,
+                  num_feed_forward=128,
+                  source_maxlen=100,
+                  target_maxlen=100,
+                  num_layers_enc=4, 
+                  num_layers_dec=1,
+                  num_classes=10
+                  ):
+        super().__init__()
+        self.loss_metric = keras.metrics.Mean(name="loss")
+        self.num_layers_enc = num_layers_enc
+        self.num_layers_dec = num_layers_dec
+        self.target_maxlen = target_maxlen
+        self.num_classes = num_classes
+
+        self.enc_input = SpeechFeatureEmbedding(num_hid=num_hid, maxlen=source_maxlen)
+        self.dec_input = TokenEmbedding(num_vocab=num_classes, maxlen=target_maxlen, num_hid=num_hid)
+
+        self.encoder = keras.Sequentiial(
+            [self.enc_input] + [TransformerEncoder(num_hid, num_head, num_feed_forward) for _ in range(num_layers_enc)]
+        )
+
+        # store the encoders as attributes of the transformer to be individually called
+        for i in range(num_layers_dec):
+            setattr(
+                self,
+                "dec_layer_{}".format(i),
+                TransformerDecoder(num_hid, num_head, num_feed_forward)
+            )
+
+        self.classifier = layers.Dense(num_classes)
+
+    def decode(self, enc_out, target):
+        y = self.dec_input(target)
+        for i in range(self.num_layers_dec):
+            y = getattr(self, "dec_layer_{}".format(i))(enc_out, y)
+        
+        return y
+    
+    def call(self, inputs):
+        source = inputs[0]
+        target = inputs[1]
+        x = self.encoder(source)
+        y = self.decode(x, target)
+
+        return self.classifier(y)
+    
+    @property # this makes [self.loss_metric] the value of the self.metrics attribute
+    def metrics(self):
+        return [self.loss_metric]
+    
+    def train_step(self, batch):
+        """Proccesses one batch inside model.fit()"""
+        source = batch["source"]
+        target = batch["target"]
+        dec_input = target[:, :-1]
+        dec_target = target[:, 1:]
+
+        with tf.GradientTape() as tape:
+            preds = self([source, dec_input])
+            one_hot = tf.one_hot(dec_target, depth=self.num_classes)
+            mask = tf.math.logical_not(tf.math.equal(dec_target, 0))
+            loss = model.compute_loss(None, one_hot, preds, sample_weight=mask)
+
+        trainable_vars = self.trainable_variables
+        graidents = tape.gradients(loss, trainable_vars)
+        self.optimizer.apply_gradients(zip(graidents, trainable_vars))
+        self.loss_metric.update_state(loss)
+
+        return {"loss": self.loss_metric.result()}
+    
+    def test_step(self, batch):
+        source = batch["source"]
+        target = batch["target"]
+        dec_input = target[:, :-1]
+        dec_target = target[:, 1:]
+        preds = self([source, dec_input])
+        one_hot = tf.one_hot(dec_target, depth=self.num_classes)
+        mask = tf.math.logical_not(tf.math.equal(dec_target, 0))
+        loss = model.compute_loss(None, one_hot, preds, sample_weight=mask)
+        self.loss_metric.update_state(loss)
+
+        return {"loss": self.loss_metric.result()}
+    
+    def generate(self, source, target_start_token_idx):
+        """Preforms inference over one batch of inputs using greedy decoding"""
+        bs = tf.shape(source)[0]
+        enc = self.encoder(source)
+        dec_input = tf.ones((bs, 1), dtype=tf.int32 * target_start_token_idx)
+        dec_logits = []
+
+        for i in range(self.target_maxlen - 1):
+            dec_out = self.decode(enc, dec_input)
+            logits = self.classifier(dec_out)
+            logits = tf.argmax(logits, axis=-1, output_type=tf.int32)
+            last_logit = tf.expand_dims(logits[:, -1], axis=-1)
+            dec_logits.append(last_logit)
+            dec_input = tf.concat([dec_input, last_logit], axis=-1)
+        return dec_input
+
+keras.utils.get_file(
+        origin="https://data.keithito.com/data/speech/LJSpeech-1.1.tar.bz2",
+        extract=True,
+        archive_format="tar",
+        cache_dir="."
+        )
+
+saveto = "./datasets/LJSpeech-1.1"
+wavs = glob("{}/**/*.wav".format(saveto), recursive=True)
+
+id_to_text = {}
+with open(os.path.join(saveto, "metadata.csv"), encoding="utf-8") as f:
+    for line in f:
+        id = line.strip().split("|")[0]
+        text = line.strip().split("|")[2]
+        id_to_text[id] = text
+
+def get_data(wavs, id_to_text, maxlen=50):
+    """returns mapping of audio paths and transcription texts"""
+    data = []
+    for w in wavs:
+        id = pattern_wav_name.split(w)[-4]
+        if len(id_to_text[id]) < maxlen:
+            data.append({"audio": w, "text": id_to_text[id]})
+    
+    return data
