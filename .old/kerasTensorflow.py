@@ -44,13 +44,13 @@ class SpeechFeatureEmbedding(layers.Layer):
 class TransformerEncoder(layers.Layer):
     def __init__(self, embed_dim, num_heads, feed_forward_dim, rate=0.1):
         super().__init__()
-        self.att = layers.MultiHeadAttention(num_heads, key_dim=embed_dim)
+        self.attn = layers.MultiHeadAttention(num_heads, key_dim=embed_dim)
         self.ffn = keras.Sequential([
             layers.Dense(feed_forward_dim, activation="relu"),
             layers.Dense(embed_dim),
         ])
         self.layernorm1 = layers.LayerNormalization(epsilon=1e-6)
-        self.layernorm2 = layers.LayerNormalization(epislon=1e-6)
+        self.layernorm2 = layers.LayerNormalization(epsilon=1e-6)
         self.dropout1 = layers.Dropout(rate)
         self.dropout2 = layers.Dropout(rate)
 
@@ -88,19 +88,19 @@ class TransformerDecoder(layers.Layer):
         mask = tf.reshape(mask, [1, n_dset, n_src])
         mult = tf.concat([tf.expand_dims(batch_size, -1), tf.constant([1, 1], dtype=tf.int32)], 0)
 
-        return tf.title(mask, mult)
+        return tf.tile(mask, mult)
     
     def call(self, enc_out, target):
         input_shape = tf.shape(target)
         batch_size = input_shape[0]
         seq_len = input_shape[1]
-        causal_mask = self.causal_attention_mask(batch_size, seq_len, seq_len, tf.bool)
-        target_att = self.set_att(target, target, attention_mask=causal_mask)
+        causal_mask = self.casual_attention_mask(batch_size, seq_len, seq_len, tf.bool)
+        target_att = self.self_att(target, target, attention_mask=causal_mask)
         target_norm = self.layernorm1(target + self.self_droppout(target_att))
         enc_out = self.enc_att(target_norm, enc_out)
         enc_out_norm = self.layernorm2(self.enc_dropout(enc_out) + target_norm)
         ffn_out = self.ffn(enc_out_norm)
-        ffn_out_norm = self.layernorm3(enc_out_norm, self.ffn_dropout(ffn_out))
+        ffn_out_norm = self.layernorm3(enc_out_norm + self.ffn_dropout(ffn_out))
 
         return ffn_out_norm
     
@@ -125,7 +125,7 @@ class Transformer(keras.Model):
         self.enc_input = SpeechFeatureEmbedding(num_hid=num_hid, maxlen=source_maxlen)
         self.dec_input = TokenEmbedding(num_vocab=num_classes, maxlen=target_maxlen, num_hid=num_hid)
 
-        self.encoder = keras.Sequentiial(
+        self.encoder = keras.Sequential(
             [self.enc_input] + [TransformerEncoder(num_hid, num_head, num_feed_forward) for _ in range(num_layers_enc)]
         )
 
@@ -172,7 +172,7 @@ class Transformer(keras.Model):
             loss = model.compute_loss(None, one_hot, preds, sample_weight=mask)
 
         trainable_vars = self.trainable_variables
-        graidents = tape.gradients(loss, trainable_vars)
+        graidents = tape.gradient(loss, trainable_vars)
         self.optimizer.apply_gradients(zip(graidents, trainable_vars))
         self.loss_metric.update_state(loss)
 
@@ -207,14 +207,7 @@ class Transformer(keras.Model):
             dec_input = tf.concat([dec_input, last_logit], axis=-1)
         return dec_input
 
-keras.utils.get_file(
-        origin="https://data.keithito.com/data/speech/LJSpeech-1.1.tar.bz2",
-        extract=True,
-        archive_format="tar",
-        cache_dir="."
-        )
-
-saveto = "./datasets/LJSpeech-1.1"
+saveto = "/home/dylenthomas/datasets/LJSpeech-1.1"
 wavs = glob("{}/**/*.wav".format(saveto), recursive=True)
 
 id_to_text = {}
@@ -233,3 +226,188 @@ def get_data(wavs, id_to_text, maxlen=50):
             data.append({"audio": w, "text": id_to_text[id]})
     
     return data
+
+
+class VectorizeChar:
+    def __init__(self, max_len=50):
+        self.vocab = (
+            ["-", "#", "<", ">"] + [chr(i + 96) for i in range(1, 27)] + [" ", ".", ",", "?"]
+        )
+        self.max_len = max_len
+        self.char_to_idx = {}
+
+        for i, ch, in enumerate(self.vocab):
+            self.char_to_idx[ch] = i
+
+    def __call__(self, text):
+        text = text.lower()
+        text = text[: self.max_len - 2]
+        text = "<" + text + ">"
+        pad_len = self.max_len - len(text)
+
+        return [self.char_to_idx.get(ch, 1) for ch in text] + [0] * pad_len
+
+    def get_vocab(self):
+        return self.vocab
+
+max_target_len = 200 
+data = get_data(wavs, id_to_text, max_target_len)
+vectorizer = VectorizeChar(max_target_len)
+print("vocab size", len(vectorizer.get_vocab()))
+
+def create_text_ds(data):
+    texts = [_["text"] for _ in data]
+    text_ds = [vectorizer(t) for t in texts]
+    text_ds = tf.data.Dataset.from_tensor_slices(text_ds)
+
+    return text_ds
+
+def path_to_audio(path):
+    audio = tf.io.read_file(path)
+    audio, _ = tf.audio.decode_wav(audio, 1)
+    audio = tf.squeeze(audio, axis=-1)
+    stfts = tf.signal.stft(audio, frame_length=200, frame_step=80, fft_length=256)
+    x = tf.math.pow(tf.abs(stfts), 0.5)
+
+    means = tf.math.reduce_mean(x, 1, keepdims=True)
+    stddevs = tf.math.reduce_std(x, 1, keepdims=True)
+    x = (x - means) / stddevs
+    audio_len = tf.shape(x)[0]
+
+    pad_len = 2754
+    paddings = tf.constant([[0, pad_len], [0, 0]])
+    x = tf.pad(x, paddings, "CONSTANT")[:pad_len, :]
+
+    return x
+
+def create_audio_ds(data):
+    flist = [_["audio"] for _ in data]
+    audio_ds = tf.data.Dataset.from_tensor_slices(flist)
+    audio_ds = audio_ds.map(path_to_audio, num_parallel_calls=tf.data.AUTOTUNE)
+
+    return audio_ds
+
+def create_tf_dataset(data, bs=4):
+    audio_ds = create_audio_ds(data)
+    text_ds = create_text_ds(data)
+    ds = tf.data.Dataset.zip((audio_ds, text_ds))
+    ds = ds.map(lambda x, y: {"source": x, "target": y})
+    ds = ds.batch(bs)
+    ds = ds.prefetch(tf.data.AUTOTUNE)
+
+    return ds
+
+split = int(len(data) * 0.99)
+train_data = data[:split]
+test_data = data[split:]
+ds = create_tf_dataset(train_data, bs=64)
+val_ds = create_tf_dataset(test_data, bs=4)
+
+class DisplayOutputs(keras.callbacks.Callback):
+    def __init__(self,
+                 batch,
+                 idx_to_token,
+                 target_start_token_idx=27,
+                 target_end_token_idx=28):
+
+        "display a batch of outputs after every epoch"
+        self.batch = batch
+        self.target_start_token_idx = target_start_token_idx
+        self.target_end_token_idx = target_end_token_idx
+        self.idx_to_char = idx_to_token
+
+    def on_epoch_end(self, epoch, logs=None):
+        if epoch % 5 != 0:
+            return
+
+        source = self.batch["source"]
+        target = self.batch["target"].numpy()
+        bs = tf.shape(source)[0]
+        preds = self.model.generate(source, self.target_start_token_idx)
+        preds = preds.numpy()
+
+        for i in range(bs):
+            target_text = "".join([self.idx_to_char[_] for _ in target[i, :]])
+            prediction = ""
+            for idx in preds[i, :]:
+                prediction += self.idx_to_char[idx]
+                if idx == self.target_end_token_idx:
+                    break
+
+            print("target:       {}".format(target_text.replace("-", "")))
+            print("prediction    {}".format(prediction))
+
+class CustomSchedule(keras.optimizers.schedules.LearningRateSchedule):
+    def __init__(self,
+                 init_lr=0.00001,
+                 lr_after_warmup=0.001,
+                 final_lr=0.00001,
+                 warmup_epochs=15,
+                 decay_epochs=85,
+                 steps_per_epoch=203):
+
+        super().__init__()
+        self.init_lr = init_lr
+        self.lr_after_warmup = lr_after_warmup
+        self.final_lr = final_lr
+        self.warmup_epochs = warmup_epochs
+        self.decay_epochs = decay_epochs
+        self.steps_per_epoch = steps_per_epoch
+
+    def calculate_lr(self, epoch):
+        """linear warmup, linear decay"""
+        warmup_lr = (
+            self.init_lr +
+                ((self.lr_after_warmup - self.init_lr) / (self.warmup_epochs - 1))
+        )
+        decay_lr = tf.math.maximum(
+            self.final_lr,
+            self.lr_after_warmup
+            - (epoch - self.warmup_epochs)
+            * (self.lr_after_warmup - self.final_lr)
+            / self.decay_epochs
+        )
+
+        return tf.math.minimum(warmup_lr, decay_lr)
+
+    def __call__(self, step):
+        epoch = step // self.steps_per_epoch 
+        epoch = tf.cast(epoch, "float32")
+
+        return self.calculate_lr(epoch)
+
+batch = next(iter(val_ds))
+
+idx_to_char = vectorizer.get_vocab()
+display_cb = DisplayOutputs(
+    batch, idx_to_char, target_start_token_idx=2, target_end_token_idx=3
+)
+
+model = Transformer(
+    num_hid=200,
+    num_head=2,
+    num_feed_forward=400,
+    target_maxlen=max_target_len,
+    num_layers_enc=4,
+    num_layers_dec=1,
+    num_classes=34
+)
+
+loss_fn = keras.losses.CategoricalCrossentropy(
+    from_logits=True,
+    label_smoothing=0.1
+)
+
+learning_rate = CustomSchedule(
+    init_lr=0.00001,
+    lr_after_warmup=0.001,
+    final_lr=0.00001,
+    warmup_epochs=15,
+    decay_epochs=85,
+    steps_per_epoch=len(ds)
+)
+
+optimizer = keras.optimizers.Adam(learning_rate)
+model.compile(optimizer=optimizer, loss=loss_fn)
+
+history = model.fit(ds, validation_data=val_ds, callbacks=[display_cb], epochs=1)
