@@ -1,6 +1,7 @@
 #include <torch/script.h>
 
-torch::jit::script::Module model = torch::jit::load("/Users/dylenthomas/Documents/whisper/.model/whisper.pt");
+torch::jit::script::Module model;
+std::vector<torch::jit::IValue> input_tensor;
 
 int predict(std::vector<torch::jit::IValue> input) {
     {
@@ -11,9 +12,14 @@ int predict(std::vector<torch::jit::IValue> input) {
     }
 }
 
-int main() {
-    std::vector<torch::jit::IValue> input_tensor;
-    input_tensor.push_back(torch::randn({64, 91}));
+int main(int argc, const char* argv[]) {
+    if (argc != 2){
+        std::cerr << "usage: predict_test <path/to/model>" << std::endl;
+        return -1;
+    }
+
+    model = torch::jit::load(argv[1]);
+    input_tensor.push_back(torch::randn({1, 64, 91}));
 
     int guess = predict(input_tensor);
     std::cout << guess << std::endl;
