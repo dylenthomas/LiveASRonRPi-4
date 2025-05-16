@@ -55,10 +55,18 @@ class LogMelSpectrogram():
 class offlineWhisperProcessor():
     """Offline processor for whisper decoding and feature extraction
     """
-    def __init__(self, config_path:str):
-        with open(config_path, 'r') as f:
-            self.config = json.load(f)
-            f.close()
+    def __init__(self, config_path:str, special_tokens_path:str, vocab_path:str):
+        with open(config_path, 'r') as a:
+            self.config = json.load(a)
+            a.close()
+
+        with open(special_tokens_path, 'r') as b:
+            self.special_tokens = json.load(b)["added_tokens_decoder"]
+            b.close()
+
+        with open(vocab_path, 'r') as c:
+            self.vocab = json.load(c)
+            c.close()
 
         self.sample_rate = self.config["sampling_rate"]
         self.hop_length = self.config["hop_length"]
@@ -69,6 +77,12 @@ class offlineWhisperProcessor():
 
         self.lm_spect_transform = LogMelSpectrogram(self.mel_filters, self.sample_rate, self.n_samples, self.n_fft, self.hop_length)
     
+    def decode_single(self, val):
+        if val > 50257:
+            return self.special_tokens[val]
+        else:
+            return list(self.vocab.keys())[val] # val corresponds to the index
+
     def print_config(self):
         for key in self.config.keys():
             print(key)
