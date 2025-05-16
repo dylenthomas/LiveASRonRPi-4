@@ -79,7 +79,7 @@ class offlineWhisperProcessor():
     
     def decode_single(self, val):
         if val > 50257:
-            return self.special_tokens[val]
+            return self.special_tokens[str(val)]["content"]
         else:
             return list(self.vocab.keys())[val] # val corresponds to the index
 
