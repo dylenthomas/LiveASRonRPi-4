@@ -1,5 +1,8 @@
 #include <stdio.h>
 #include <alsa/asoundlib.h>
+#include <cmath>
+
+// g++ -fPIC -shared -o micModule.so micModule.cpp -lasound
 
 void checkErr(int err, int check_val) {
     if (err < check_val) {
@@ -19,7 +22,8 @@ extern "C" {
     short* accessMicrophone(const char* name, unsigned int rate, int channels, int frames, int record_length, int* collected_samples) {
         int iters = std::round((rate * record_length) / frames);
         int total_samples = frames * iters;
-       
+        int err;
+        
         short buffer[frames];
         /* allocate array on the heap, so they can be transferred to python since they survive after the function ends 
            returning something like short buf_storage[total_smaples] would return a pointer ot dead memory */
@@ -28,7 +32,7 @@ extern "C" {
         snd_pcm_t *capture_handle;
         snd_pcm_hw_params_t *hw_params;
 
-        checkErr(snd_pcm_open(&capture_handle, name, SND_PCM_STREAM_CAPTURE, 0)), 0);
+        checkErr(snd_pcm_open(&capture_handle, name, SND_PCM_STREAM_CAPTURE, 0), 0);
         checkErr(snd_pcm_hw_params_malloc(&hw_params), 0);
         checkErr(snd_pcm_hw_params_any(capture_handle, hw_params), 0);
         checkErr(snd_pcm_hw_params_set_access(capture_handle, hw_params, SND_PCM_ACCESS_RW_INTERLEAVED), 0);

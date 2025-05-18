@@ -4,7 +4,7 @@ from ctypes import *
 import numpy as np
 #from ai_edge_litert.interpreter import Interpreter
 from transformers import WhisperForConditionalGeneration
-import os
+#import os
 from utils.WhisperProcessor import offlineWhisperProcessor
 
 #os.environ["TRANSFORMERS_OFFLINE"] = "1"
@@ -15,7 +15,7 @@ processor = offlineWhisperProcessor(config_path="utils/preprocessor_config.json"
                                     )
 
 model = WhisperForConditionalGeneration.from_pretrained("openai/whisper-tiny")
-clib = CDLL("/home/dylenthomas/whisper/whispermodule.so")
+clib = CDLL("./micModule.so")
 
 #define c++ functions
 clib.accessMicrophone.argtypes = [c_char_p, c_uint, c_int, c_int, c_int, POINTER(c_int)]
