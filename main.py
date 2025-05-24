@@ -18,7 +18,7 @@ processor = offlineWhisperProcessor(config_path="utils/preprocessor_config.json"
 
 model = WhisperForConditionalGeneration.from_pretrained("openai/whisper-tiny", local_files_only=True)
 
-clib = CDLL("./micModule.so")
+clib = CDLL("./utils/micModule.so")
 
 #define c++ functions
 clib.accessMicrophone.argtypes = [c_char_p, c_uint, c_int, c_int, c_int, POINTER(c_int)]
