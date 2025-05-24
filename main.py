@@ -4,8 +4,10 @@ from ctypes import *
 import numpy as np
 #from ai_edge_litert.interpreter import Interpreter
 from transformers import WhisperForConditionalGeneration
-#import os
+import os
 from utils.WhisperProcessor import offlineWhisperProcessor
+import torchaudio
+from scipy.io.wavfile import write
 
 #os.environ["TRANSFORMERS_OFFLINE"] = "1"
 
@@ -14,7 +16,8 @@ processor = offlineWhisperProcessor(config_path="utils/preprocessor_config.json"
                                     vocab_path="utils/vocab.json"
                                     )
 
-model = WhisperForConditionalGeneration.from_pretrained("openai/whisper-tiny")
+model = WhisperForConditionalGeneration.from_pretrained("openai/whisper-tiny", local_files_only=True)
+
 clib = CDLL("./micModule.so")
 
 #define c++ functions
@@ -25,23 +28,25 @@ clib.freeBuffer.argtypes = [POINTER(c_short)]
 clib.freeBuffer.restype = None
 
 sample_count = c_int()
-ptr = clib.accessMicrophone(b"microphone name", 16000, 1, 512, 5, byref(sample_count))
+ptr = clib.accessMicrophone(b"default", 16000, 1, 512, 5, byref(sample_count))
 mic_samples = [ptr[i] for i in range(sample_count.value)]
 clib.freeBuffer(ptr)
 
-signal = np.array(mic_samples)
+signal = np.array(mic_samples, dtype=np.float32)
+write("test_out.wav", 16000, signal)
+
+#signal, _ = torchaudio.load("./8455-210777-0068.wav")
+
 features = processor.extract_features(signal)
-pred = model.generate(features)[0]
+pred = model.generate(features, language="en")[0]
 
-for tok in pred:
-    print(processor.decode_single(tok))
+transcription = []
+for i, tok in enumerate(pred):
+    transcription.append(processor.decode_single(tok))
 
-#Wav2Vec2 = torch.jit.load("/home/dylenthomas/whisper/.model/Wav2Vec2.pt")
-#decoder = GreedyCTCDecoder(labels)
+transcription = "".join(transcription).replace("Ġ", " ")
+if transcription[0] == " ":
+    transcription =  transcription[1:]
 
-#mic_samples = torch.tensor(mic_samples)
-#with torch.inference_mode():
-#    emission, _ = Wav2Vec2(mic_samples)
-
-#transcript = decoder(emission[0])
-#print(transcript)
+print("===Transcription===")
+print(transcription)

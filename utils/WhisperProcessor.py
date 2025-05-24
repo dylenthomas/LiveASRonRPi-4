@@ -88,7 +88,10 @@ class offlineWhisperProcessor():
             print(key)
             print("\t", self.config[key])
 
-    def extract_features(self, waveform:torch.Tensor):
+    def extract_features(self, waveform):
+        if type(waveform) != type(torch.Tensor):
+            waveform = torch.Tensor(waveform)
+         
         features = self.lm_spect_transform.compute(waveform)
         if features.shape[-1] > self.nb_max_frames: # sometimes is 3001 and not 3000
             features = features[:, :-(features.shape[-1] - self.nb_max_frames)]
