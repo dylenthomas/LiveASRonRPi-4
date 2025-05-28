@@ -1,5 +1,5 @@
 from ctypes import * 
-
+import ctypes
 #import tensorflow as tf
 import numpy as np
 #from ai_edge_litert.interpreter import Interpreter
@@ -8,6 +8,8 @@ import os
 from utils.WhisperProcessor import offlineWhisperProcessor
 import torchaudio
 from scipy.io.wavfile import write
+import wave
+import torch
 
 #os.environ["TRANSFORMERS_OFFLINE"] = "1"
 
@@ -28,14 +30,23 @@ clib.freeBuffer.argtypes = [POINTER(c_short)]
 clib.freeBuffer.restype = None
 
 sample_count = c_int()
-ptr = clib.accessMicrophone(b"default", 16000, 1, 512, 5, byref(sample_count))
-mic_samples = [ptr[i] for i in range(sample_count.value)]
+ptr = clib.accessMicrophone(b"plughw:CARD=Snowball", 16000, 1, 1024, 5, byref(sample_count))
+
+signal = np.ctypeslib.as_array(ptr, shape=(sample_count.value,)).copy()
+signal = signal.astype(np.float32) / 32768.0
+signal = torch.from_numpy(signal)
+
 clib.freeBuffer(ptr)
 
-signal = np.array(mic_samples, dtype=np.float32)
-write("test_out.wav", 16000, signal)
+#wav = wave.open("test_out.wav", "wb")
+#wav.setnchannels(1)
+#wav.setsampwidth(2)  # 16-bit
+#wav.setframerate(16000)
+#wav.writeframes(signal)
+#wav.close()
 
-#signal, _ = torchaudio.load("./8455-210777-0068.wav")
+#signal, _ = torchaudio.load("./test_out.wav")
+#signal = signal.resize(signal.shape[-1])
 
 features = processor.extract_features(signal)
 pred = model.generate(features, language="en")[0]
