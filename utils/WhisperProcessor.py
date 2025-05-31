@@ -10,21 +10,22 @@ class LogMelSpectrogram():
         Audio must be sampled at 16,000 sr
         Audio must also be mono
     """
-    def __init__(self, mel_filters:torch.Tensor, sample_rate:int, n_samples:int, n_fft:int, hop_length:int):
+    def __init__(self, mel_filters:torch.Tensor, sample_rate:int, n_samples:int, n_fft:int, hop_length:int, device:str="cpu"):
         self.mel_floor = 1e-10
 
         self.mel_filters = mel_filters
         self.sample_rate = sample_rate
         self.n_samples = n_samples
+        self.device = device
 
         self.spectrogram_transform = T.Spectrogram(n_fft=n_fft,
                                                    hop_length=hop_length,
                                                    power=2.0,
-                                                   )
-        self.db_transform = T.AmplitudeToDB(stype="power")
+                                                   ).to(self.device)
+        self.db_transform = T.AmplitudeToDB(stype="power").to(self.device)
 
     def convert_to_mel_scale(self, spectrogram):
-        return torch.maximum(torch.Tensor([[self.mel_floor]]), torch.mm(self.mel_filters, spectrogram))
+        return torch.maximum(torch.Tensor([[self.mel_floor]]).to(device=self.device), torch.mm(self.mel_filters, spectrogram))
 
     def pad_or_trim_waveform(self, waveform):
         waveform_length = waveform.shape[-1]
@@ -36,7 +37,7 @@ class LogMelSpectrogram():
         return waveform
    
     def compute(self, x):
-        x = self.pad_or_trim_waveform(x)
+        #x = self.pad_or_trim_waveform(x)
         x = self.spectrogram_transform(x)
         x = self.convert_to_mel_scale(x)
 
@@ -55,7 +56,7 @@ class LogMelSpectrogram():
 class offlineWhisperProcessor():
     """Offline processor for whisper decoding and feature extraction
     """
-    def __init__(self, config_path:str, special_tokens_path:str, vocab_path:str):
+    def __init__(self, config_path:str, special_tokens_path:str, vocab_path:str, device:str="cpu"):
         with open(config_path, 'r') as a:
             self.config = json.load(a)
             a.close()
@@ -68,14 +69,16 @@ class offlineWhisperProcessor():
             self.vocab = json.load(c)
             c.close()
 
+        self.device = device
+
         self.sample_rate = self.config["sampling_rate"]
         self.hop_length = self.config["hop_length"]
-        self.mel_filters = torch.Tensor(self.config["mel_filters"])
+        self.mel_filters = torch.Tensor(self.config["mel_filters"]).to(self.device)
         self.n_fft = self.config["n_fft"]
         self.n_samples = self.config["n_samples"]
         self.nb_max_frames = self.config["nb_max_frames"]
 
-        self.lm_spect_transform = LogMelSpectrogram(self.mel_filters, self.sample_rate, self.n_samples, self.n_fft, self.hop_length)
+        self.lm_spect_transform = LogMelSpectrogram(self.mel_filters, self.sample_rate, self.n_samples, self.n_fft, self.hop_length, device=self.device)
     
     def decode_single(self, val):
         if val > 50257:
@@ -92,8 +95,12 @@ class offlineWhisperProcessor():
         features = self.lm_spect_transform.compute(waveform)
         if features.shape[-1] > self.nb_max_frames: # sometimes is 3001 and not 3000
             features = features[:, :-(features.shape[-1] - self.nb_max_frames)]
-        return features.unsqueeze(0)
+        return features
     
+    def gen_decoder_ids(self):
+        # <|startoftranscript|> <|en|> <|transcribe|> <|notimestamps|> 
+        ids = [50258, 50259, 50359, 50363]
+        return torch.tensor([ids], dtype=torch.long).to(self.device)
 
 if __name__ == "__main__":
     processor = offlineWhisperProcessor("/home/dylenthomas/whisperProject/modelTest/whisper-tiny/preprocessor_config.json")
