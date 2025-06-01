@@ -11,6 +11,7 @@ import threading
 import timeit
 import inspect
 from faster_whisper import WhisperModel
+import sys
 
 os.environ["TRANSFORMERS_OFFLINE"] = "1"
 device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -81,7 +82,7 @@ def window_manager():
     both_filled = False
     while not both_filled:
         both_filled = buffer_len[0] > 0 and buffer_len[1] > 0
-    print("Started window manager...")
+    print("Starting window manager...")
     
     while running:
         if len(window_processor_que) > 0 :
@@ -101,52 +102,29 @@ def window_manager():
             del(window_processor_que[0]) # delete the completed task
         first_frame = 0 # reset first_frame
 
-def prediction():
-    #window = torch.from_numpy(window_que[0]).to(device)
-    #window = window_que[0]#window.numpy()
-    #window = window * (2**15)
-    #window = window.astype(dtype=np.int16)
-    #wav = wave.open("test_out.wav", "wb")
-    #wav.setnchannels(1)
-    #wav.setsampwidth(2)  # 16-bit
-    #wav.setframerate(16000)
-    #wav.writeframes(window)
-    #wav.close()
+def prediction(log_audio:bool=False):
+    if log_audio:
+        save_audio()
     
     features = processor.extract_features(torch.from_numpy(window_que[0]).to(device))
     features = features.cpu()
+    del(window_que[0]) # remove window from que
     segments = model.transcribe(features, beam_size=5, language="en")
     
-   #start_model_gen = timeit.default_timer()
-    
-    print("===Transcription===")
     for segment in segments:
-        print("[%.2fs -> %.2fs] %s" % (segment.start, segment.end, segment.text))
-    #model_pred_time = timeit.default_timer() - start_model_gen 
-    #pred = model.generate(input_features=features, language="en")[0]
+        print("[Window Que Length = %d] ===Transcription=== : [%.2fs -> %.2fs] \t%s" % (len(window_que), segment.start, segment.end, segment.text))
 
-    #pred = model(input_features=features,
-    #             attention_mask=attention_mask,
-    #             decoder_input_ids=processor.gen_decoder_ids(),
-    #             ).logits[:, -1, :]
-    #pred = torch.argmax(pred[0]).item()
-    #print(processor.decode_single(pred))
-    
-    #transcription = []
-    #for i, tok in enumerate(pred):
-    #    print(tok)
-    #    transcription.append(processor.decode_single(tok))
-
-    #transcription = "".join(transcription).replace("Ġ", " ")
-    #if transcription[0] == " ":
-    #    transcription =  transcription[1:]
-
-    #print(transcription)
-    del(window_que[0]) # remove window from que
-    print(len(window_que))
-
-    #print("prediction time", timeit.default_timer() - start_pred_loop)
-    print("model prediction time", model_pred_time)
+def save_audio():
+    window = torch.from_numpy(window_que[0]).to(device)
+    window = window_que[0]#window.numpy()
+    window = window * (2**15)
+    window = window.astype(dtype=np.int16)
+    wav = wave.open("test_out.wav", "wb")
+    wav.setnchannels(1)
+    wav.setsampwidth(2)  # 16-bit
+    wav.setframerate(16000)
+    wav.writeframes(window)
+    wav.close()
         
 ### SET VARIABLES ###
 running = True
@@ -157,8 +135,8 @@ sample_rate = 16000
 channels = 1
 buffer_frames = 1024
 record_seconds = 2.0
-window_len = 2 * sample_rate
-hop_len = window_len#int((1/16) * sample_rate)
+window_len = 1 * sample_rate
+hop_len = window_len // 2
 
 buffer_storage = np.zeros(int(2 * record_seconds * sample_rate), dtype=np.float32) # create storage for two signals
 prev_loc = 0 # keep track of last used storage location and initialize
@@ -182,24 +160,7 @@ try:
         if len(window_que) > 0:
             prediction()
 except KeyboardInterrupt:
-    print("Stopping...")
+    print("\nStopping...")
     running = False
     audio_thread.join()
     win_thread.join()
-
-#signal, _ = torchaudio.load("./test_out.wav")
-#signal = signal.resize(signal.shape[-1])
-
-#features = processor.extract_features(signal)
-#pred = model.generate(features, language="en")[0]
-
-#transcription = []
-#for i, tok in enumerate(pred):
-#    transcription.append(processor.decode_single(tok))
-
-#transcription = "".join(transcription).replace("Ġ", " ")
-#if transcription[0] == " ":
-    #transcription =  transcription[1:]
-
-#print("===Transcription===")
-#print(transcription)
