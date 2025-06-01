@@ -1,1 +1,4 @@
 .model/Wav2Vec2.pt
+build/*
+include/*
+TCN/*
