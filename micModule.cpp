@@ -1,6 +1,8 @@
 #include <stdio.h>
 #include <alsa/asoundlib.h>
-#include <math.h>
+#include <cmath>
+
+// g++ -fPIC -shared -o utils/micModule.so micModule.cpp -lasound
 
 void checkErr(int err, int check_val) {
     if (err < check_val) {
@@ -18,12 +20,11 @@ extern "C" {
 
 extern "C" {
     short* accessMicrophone(const char* name, unsigned int rate, int channels, int frames, int record_length, int* collected_samples) {
-        int err; 
+        int iters = std::round((rate * record_length) / frames);
+        int total_samples = frames * channels * iters;
+        int err;
         
-        int iters = round((rate * record_length) / frames);
-        int total_samples = frames * iters;
-       
-        short buffer[frames];
+        short buffer[frames * channels];
         /* allocate array on the heap, so they can be transferred to python since they survive after the function ends 
            returning something like short buf_storage[total_smaples] would return a pointer ot dead memory */
         short* buf_storage = new short[total_samples];
@@ -48,8 +49,8 @@ extern "C" {
                 exit(1);
             }
 
-            for (int x = 0; x < frames; ++x) {
-                buf_storage[x + (frames * i)] = buffer[x];
+            for (int x = 0; x < frames * channels; ++x) {
+                buf_storage[x + (frames * channels * i)] = buffer[x];
             }
         }
 
