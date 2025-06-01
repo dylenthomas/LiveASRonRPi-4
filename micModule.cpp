@@ -1,8 +1,12 @@
 #include <stdio.h>
 #include <alsa/asoundlib.h>
+<<<<<<<< HEAD:micModule.cpp
 #include <cmath>
 
 // g++ -fPIC -shared -o utils/micModule.so micModule.cpp -lasound
+========
+#include <math.h>
+>>>>>>>> main:whisperModule.cpp
 
 void checkErr(int err, int check_val) {
     if (err < check_val) {
@@ -20,18 +24,31 @@ extern "C" {
 
 extern "C" {
     short* accessMicrophone(const char* name, unsigned int rate, int channels, int frames, int record_length, int* collected_samples) {
+<<<<<<<< HEAD:micModule.cpp
         int iters = std::round((rate * record_length) / frames);
         int total_samples = frames * channels * iters;
         int err;
         
         short buffer[frames * channels];
+========
+        int err; 
+        
+        int iters = round((rate * record_length) / frames);
+        int total_samples = frames * iters;
+       
+        short buffer[frames];
+>>>>>>>> main:whisperModule.cpp
         /* allocate array on the heap, so they can be transferred to python since they survive after the function ends 
            returning something like short buf_storage[total_smaples] would return a pointer ot dead memory */
         short* buf_storage = new short[total_samples];
 
         snd_pcm_t *capture_handle;
         snd_pcm_hw_params_t *hw_params;
+<<<<<<<< HEAD:micModule.cpp
 
+========
+        
+>>>>>>>> main:whisperModule.cpp
         checkErr(snd_pcm_open(&capture_handle, name, SND_PCM_STREAM_CAPTURE, 0), 0);
         checkErr(snd_pcm_hw_params_malloc(&hw_params), 0);
         checkErr(snd_pcm_hw_params_any(capture_handle, hw_params), 0);
