@@ -3,6 +3,8 @@ import torchaudio.transforms as T
 import torch
 import torch.nn as nn
 import librosa
+import onnxruntime as ort
+import numpy as np
 
 class LogMelSpectrogram():
     """Compute the log mel spectrogram of an audio waveform
@@ -102,11 +104,76 @@ class offlineWhisperProcessor():
         ids = [50258, 50259, 50359, 50363]
         return torch.tensor([ids], dtype=torch.long).to(self.device)
 
-if __name__ == "__main__":
-    processor = offlineWhisperProcessor("/home/dylenthomas/whisperProject/modelTest/whisper-tiny/preprocessor_config.json")
+class onnxWraper():
+    """
+    Onnx wrapper for a VAD model, this model gives a percentage of certainty that there is human speech in each chunk of audio provided.
+    The chunk length should be 512 for 16kHz audio, so with shape (10, 512) each of those 10 chunks will get a percentage chance that there is human speech in that audio.
+    """
+    def __init__(self, path, force_cpu=False):
+        ort_opts = ort.SessionOptions()
+        ort_opts.inter_op_num_threads = 1
+        ort_opts.intra_op_num_threads = 1
 
-    waveform, _ = librosa.load("/home/dylenthomas/whisperProject/modelTest/audio/8455-210777-0068.wav", sr=16000, mono=True)
-    waveform = torch.Tensor(waveform)
+        if force_cpu and "CPUExecutionProvider" in ort.get_available_providers():
+            self.inference_ses = ort.InferenceSession(path, providers=["CPUExecutionProvider"], sess_options=ort_opts)
+            print("onnx is using CPU")
+        else:
+            self.inference_ses = ort.InferenceSession(path, providers=["CUDAExecutionProvider"], sess_options=ort_opts)
+            print("onnx is using CUDA")
 
-    waveform_features = processor.extract_features(waveform)
-    print(waveform_features)
+        self._reset_states()
+
+    def _validate_shape(self, x):
+        if x.dim() == 1:
+            x = x.unsqueeze(0)
+        elif x.dim() >  2:
+            raise ValueError(f"Too many dimensions for input audio chunk {x.dim()}")
+
+        return x
+
+    def _reset_states(self, batch_size=1):
+        self._state = torch.zeros((2, batch_size, 128)).float()
+        self._context = torch.zeros(0)
+        self._last_batch_size = 0
+
+    def __call__(self, x):
+        x = self._validate_shape(x)
+        num_samples = 512
+        if x.shape[-1] != num_samples and x.shape[-1] % num_samples != 0:
+            # reshape the data so the VAD model can process it
+            remainder = x.shape[-1] % num_samples
+            
+            remainder_data = x[:, -remainder:] # set aside the remainder data
+            x = x[:, :-remainder] # cut off the remainder data
+
+            x = torch.reshape(x, (x.shape[-1] // num_samples, num_samples)) # reshape data
+            remainder_data = nn.functional.pad(remainder_data, (0, num_samples-remainder), "constant", 0) # zero pad
+
+            x = torch.cat((x, remainder_data))
+        
+        else:
+            x = torch.reshape(x, (x.shape[-1] // num_samples, num_samples))
+            
+        batch_size = x.shape[0]
+        context_size = 64
+
+        if not self._last_batch_size:
+            self._reset_states(batch_size)
+        if self._last_batch_size and self._last_batch_size != batch_size:
+            self._reset_states(batch_size)
+
+        if not len(self._context):
+            self._context = torch.zeros(batch_size, context_size)
+
+        x = torch.cat([self._context, x], dim=1)
+
+        ort_inputs = {"input": x.numpy(), "state": self._state.numpy(), "sr": np.array(16000, dtype="int64")}
+        ort_outs = self.inference_ses.run(None, ort_inputs)
+        out, state = ort_outs
+        self._state = torch.from_numpy(state)
+
+        self._context = x[..., -context_size:]
+        self._last_batch_size = batch_size
+
+        out = torch.from_numpy(out)
+        return out
