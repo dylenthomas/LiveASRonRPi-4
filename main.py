@@ -29,7 +29,7 @@ model = WhisperModel("small", device=device, compute_type="float32")
 clib = CDLL("./utils/micModule.so")
 
 #define c++ functions
-clib.accessMicrophone.argtypes = [c_char_p, c_uint, c_int, c_int, c_int, POINTER(c_int)]
+clib.accessMicrophone.argtypes = [c_char_p, c_uint, c_int, c_int, c_int, POINTER(c_int), c_float]
 clib.accessMicrophone.restype = POINTER(c_short)
 clib.freeBuffer.argtypes = [POINTER(c_short)]
 clib.freeBuffer.restype = None
@@ -49,7 +49,7 @@ def audio_loop():
     print("Starting audio collection...")
     
     while running:
-        ptr = clib.accessMicrophone(mic_name, sample_rate, channels, buffer_frames, int(record_seconds), byref(sample_count)) # collect mic data
+        ptr = clib.accessMicrophone(mic_name, sample_rate, channels, buffer_frames, int(record_seconds), byref(sample_count), a) # collect mic data
         buffer = np.ctypeslib.as_array(ptr, shape=(sample_count.value,)) # if issues add .copy()
         buffer = buffer.astype(np.float32) / 32768.0 # convert to float32
         clib.freeBuffer(ptr)
@@ -86,6 +86,7 @@ sample_rate = 16000
 channels = 1
 buffer_frames = 1024
 record_seconds = 1.0
+a = 0.25 # the coefficient for running average
 
 buffer = np.zeros(int(record_seconds * sample_rate), dtype=np.float32)
 buffer_que = [] # create a list to store if there is a buffer that needs to be analyzed
@@ -120,7 +121,8 @@ try:
 
         if que_ready:
             prediction(prediction_que)
-            
+            #save_audio(prediction_que)
+
             prediction_que = []
             que_ready = False            
 

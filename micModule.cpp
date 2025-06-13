@@ -19,7 +19,7 @@ extern "C" {
 }
 
 extern "C" {
-    short* accessMicrophone(const char* name, unsigned int rate, int channels, int frames, int record_length, int* collected_samples) {
+    short* accessMicrophone(const char* name, unsigned int rate, int channels, int frames, int record_length, int* collected_samples, float a) {
         int iters = std::round((rate * record_length) / frames);
         int total_samples = frames * channels * iters;
         int err;
@@ -43,15 +43,21 @@ extern "C" {
         snd_pcm_hw_params_free(hw_params);
         checkErr(snd_pcm_prepare(capture_handle), 0);
 
-        for (int i = 0; i < iters; ++i) {
+        for (int i = 0; i < iters; i++) {
             if ((err = snd_pcm_readi(capture_handle, buffer, frames)) != frames) {
                 fprintf(stderr, "read from audio interface failed (%s)\n", snd_strerror(err));
                 exit(1);
             }
 
-            for (int x = 0; x < frames * channels; ++x) {
+            for (int x = 0; x < frames * channels; x++) { // place buffer in long term storage
                 buf_storage[x + (frames * channels * i)] = buffer[x];
             }
+        }
+
+        // running average filter
+        buf_storage[0] = a * buf_storage[0]; // initialize
+        for (int i = 1; i < total_samples; i++) {
+            buf_storage[i] = a * buf_storage[i] + a * buf_storage[i-1];
         }
 
         snd_pcm_close(capture_handle);
