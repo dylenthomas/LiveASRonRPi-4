@@ -1,31 +1,33 @@
-from ctypes import * 
 import numpy as np
-from transformers import WhisperForConditionalGeneration, BitsAndBytesConfig
 import os
-from utils.LARS_utils import offlineWhisperProcessor, onnxWraper
-import torchaudio
-from scipy.io.wavfile import write
 import wave
 import torch
 import threading
-import timeit
-import inspect
+import gensim
+import nltk
+import gensim.downloader
+
 from faster_whisper import WhisperModel
-import sys
+from multiprocessing import Pool
+from utils.LARS_utils import offlineWhisperProcessor, onnxWraper
+from ctypes import * 
+from gensim.models import Word2Vec
+from nltk.tokenize import word_tokenize, sent_tokenize
 
 os.environ["TRANSFORMERS_OFFLINE"] = "1"
 device = "cuda" if torch.cuda.is_available() else "cpu"
 print("Using device: {}".format(device))
 
-#quantization_config = BitsAndBytesConfig(load_in_8bit=True)
 processor = offlineWhisperProcessor(config_path="utils/preprocessor_config.json",
                                     special_tokens_path="utils/tokenizer_config.json",
                                     vocab_path="utils/vocab.json",
                                     device=device
                                     )
 vad_model = onnxWraper(".model/silero_vad_16k_op15.onnx", force_cpu=False)
-#model = WhisperForConditionalGeneration.from_pretrained("openai/whisper-tiny", local_files_only=True, device_map="auto")
 model = WhisperModel("small", device=device, compute_type="float32")
+pretrained_vectors = gensim.downloader.load("glove-wiki-gigaword-100")
+print("Loaded all models")
+
 clib = CDLL("./utils/micModule.so")
 
 #define c++ functions
@@ -56,15 +58,26 @@ def audio_loop():
 
         buffer_que.append(buffer)
 
-def prediction(prediction_que):
+def prediction(prediction_que, i = 0):
+    transcription = []
+    
     pred_array = np.concatenate(prediction_que)
     que_len = len(prediction_que)
     features = processor.extract_features(torch.from_numpy(pred_array).to(device))
     features = features.cpu()
     segments = model.transcribe(features, beam_size=5, language="en")
-    
+
+    # Move cursor up by the number of segments (or clear screen if first run)
+    if i == 0: # clear the screen if first run and move cursor to top left
+        print("\033[2J \033[H")
+    print('\033[F' * i, end='', flush=True)
+    i = 0
     for segment in segments:
-        print("[Window Que Length = %d] ===Transcription=== : [%.2fs -> %.2fs] \t%s" % (que_len, segment.start, segment.end, segment.text))
+        print("[%.2fs -> %.2fs] \t%s" % (segment.start, segment.end, segment.text))
+        transcription.append(segment.text)
+        i += 1
+
+    return i, transcription
 
 def save_audio(audio):
     window = np.concatenate(audio)
@@ -76,7 +89,39 @@ def save_audio(audio):
     wav.setframerate(16000)
     wav.writeframes(window)
     wav.close()
-        
+
+def parse_prediction(transcription):
+    """
+    parse the transcription and return a list of commands
+    The command packet is a byte with a bit field for each command
+    There is a byte for related commands with Big Endian format.
+
+    https://www.rapidtables.com/convert/number/hex-to-binary.html?x=03
+
+    command_packet [0x01, 0x02] where the first is light based commands and the second is audio based commands
+    light based commands:
+        0x01 - turn on the lights
+        0x02 - turn off the lights
+
+    audio based commands:
+        0x01 - mute the audio
+        0x02 - unmute the audio
+        0x03 - increase the volume
+        0x04 - decrease the volume
+    """
+
+    # https://techolate.com/how-to-build-a-local-ai-agent-with-python-ollama-langchain-rag/
+
+    for line in transcription:
+        for keyword in command_keywords:
+            if keyword in line.lower():
+                command_packet.append(keyword)
+
+def send_commands():
+    # send the commands to the end devices
+    print(command_packet)
+    command_packet[:] = [] # clear the command packet
+
 ### SET VARIABLES ###
 running = True
 
@@ -92,41 +137,63 @@ buffer = np.zeros(int(record_seconds * sample_rate), dtype=np.float32)
 buffer_que = [] # create a list to store if there is a buffer that needs to be analyzed
 
 prediction_que = [] # store buffers to be predicted on in a list (queue)
-que_ready = False
+clear_que = False
 thres = 0.7 # voice activity threshold
+energy_threshold = 0.002 # energy threshold to trigger prediction
+i = 0
 
-attention_mask = torch.ones(1, 80)
+command_packet = []
+
+command_keywords = ["lights", "mute", "volume up", "volume down", "volume"]
+command_keywords = [word_tokenize(command) for command in command_keywords]
+
+# convert each plain english command to a vector
+command_database = [] # store the vector of each corresponding command
+print('Generating vector database of commands...')
+for keyword in command_keywords:
+    command_database.append(pretrained_vectors[keyword])
+command_database = np.array(command_database)
+print('Vector database of commands generated.')
 ######
 
-audio_thread = threading.Thread(target=audio_loop, daemon=True)
-audio_thread.start()
+if __name__ == "__main__":
+    pool = Pool(processes=1)
+    
+    audio_thread1 = threading.Thread(target=audio_loop, daemon=True)
+    audio_thread1.start()
 
-try:
-    while running:
-        # check buffer for voice activity
-        if len(buffer_que) > 0:
-            vad_pred = vad_model(torch.from_numpy(buffer_que[0]))
-            num_speech_chunks = torch.sum((vad_pred > thres).int()).item()
+    try:
+        while running:
+            # check buffer for voice activity
+            if len(buffer_que) > 0:
+                vad_pred = vad_model(torch.from_numpy(buffer_que[0]))
+                num_speech_chunks = torch.sum((vad_pred > thres).int()).item()
+                audio_energy = torch.mean(torch.abs(torch.from_numpy(buffer_que[0])))
 
-            if num_speech_chunks > 0 and len(prediction_que) < int(30 / record_seconds):
-                # if speech is detected and there is room in the que
-                prediction_que.append(buffer_que[0])
-                print(len(prediction_que))
-            elif len(prediction_que) > 0:
-                # no speech detected or there is no room left in the que
-                # it there is something in the que mark it ready for prediction
-                que_ready = True
+                if num_speech_chunks > 0 and len(prediction_que) < int(30 / record_seconds) and audio_energy > energy_threshold:
+                    prediction_que.append(buffer_que[0])
 
-            del buffer_que[0]
+                elif len(prediction_que) > 0:
+                    # no speech detected or there is no room left in the que
+                    # if there is something in the que mark it for clearing and preform one last prediction
+                    clear_que = True
 
-        if que_ready:
-            prediction(prediction_que)
-            #save_audio(prediction_que)
+                del buffer_que[0]
 
-            prediction_que = []
-            que_ready = False            
+            if len(prediction_que) > 0:
+                i, transcription = prediction(prediction_que, i)
+                #save_audio(prediction_que)
 
-except KeyboardInterrupt:
-    print("\nStopping...")
-    running = False
-    audio_thread.join()
+                if clear_que:
+                    prediction_que[:] = [] # clear the prediction que
+                    i = 0
+                    clear_que = False
+
+                pool.apply_async(parse_prediction, (transcription,), callback=send_commands) # asynchronously parse the prediction and send the commands to the raspberry pi
+
+    except KeyboardInterrupt:
+        print("\nStopping...")
+        running = False
+        audio_thread1.join()
+        pool.close()
+        pool.terminate()
