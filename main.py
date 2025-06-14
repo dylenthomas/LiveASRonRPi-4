@@ -98,27 +98,53 @@ def parse_prediction(transcription):
 
     https://www.rapidtables.com/convert/number/hex-to-binary.html?x=03
 
-    command_packet [0x01, 0x02] where the first is light based commands and the second is audio based commands
-    light based commands:
-        0x01 - turn on the lights
-        0x02 - turn off the lights
-
-    audio based commands:
-        0x01 - mute the audio
-        0x02 - unmute the audio
-        0x03 - increase the volume
-        0x04 - decrease the volume
+    bitfield:
+        [a, b, c, d, e, _, _, _]
+        * if any bits are 0, then there is no command
+        a = 1 - turn on lights * if both light commands are 1 then do not send light command
+        b = 1 - turn off lights
+        c = 1 - mute the sound
+        d = 1 - turn volume up
+        e = 1 - turn volume down
     """
 
     # https://techolate.com/how-to-build-a-local-ai-agent-with-python-ollama-langchain-rag/
+    # for the transcription, grab three words at a time to create a 3xlen vector
+    # using three words at a time to get better context and allow for more than binary commands
+    transcription_vectors = []
+    transcription = word_tokenize(transcription)
+    for word in transcription:
+        word = word.lower()
+        transcription_vectors.append(pretrained_vectors[word])
+    transcription_vectors = np.array(transcription_vectors)
+    
+    # calculate the cosine similarity between the transcription and each command
+    # the matrix created will give the cosine similarity between each transcription and command, where
+    #   a row is the similarity between the transcription and each command
+    dot_product = np.matmul(transcription_vectors, command_database) # does dot product for each row and column 
+    
+    transcription_norms = np.linalg.norm(transcription_vectors, axis=1, keepdims=True)
+    command_norms = np.linalg.norm(command_database, axis=0, keepdims=True)
+    dot_product = dot_product / (transcription_norms * command_norms)
+    
+    most_similar = np.argmax(dot_product, axis=1) # find the index of the highest cosine similarity
 
-    for line in transcription:
-        for keyword in command_keywords:
-            if keyword in line.lower():
-                command_packet.append(keyword)
+    command_byte1 = 0x00 # initialize the command byte to 0
+    for i, ind in enumerate(most_similar):
+        if dot_product[i, ind] > similarity_threshold:
+            command_byte1 |= 0x01 << ind # set the bit for the command by shifting it ind number of times to the left then adding it to the byte
+
+    # check to make sure the light commands dre not both 1
+    lights_on = (command_byte1 & 0x01) == 1
+    lights_off = (command_byte1 & 0x02) == 1
+
+    if lights_on and lights_off:
+        command_byte1 &= ~0x01 # set both bits to 0
+
+    command_packet.append(int(command_byte1).to_bytes(1, 'big'))
 
 def send_commands():
-    # send the commands to the end devices
+    # create a byte array of the command packet
     print(command_packet)
     command_packet[:] = [] # clear the command packet
 
@@ -132,6 +158,7 @@ channels = 1
 buffer_frames = 1024
 record_seconds = 1.0
 a = 0.25 # the coefficient for running average
+similarity_threshold = 0.8 # the threshold for the similarity between the transcription and the command
 
 buffer = np.zeros(int(record_seconds * sample_rate), dtype=np.float32)
 buffer_que = [] # create a list to store if there is a buffer that needs to be analyzed
@@ -143,16 +170,19 @@ energy_threshold = 0.002 # energy threshold to trigger prediction
 i = 0
 
 command_packet = []
-
-command_keywords = ["lights", "mute", "volume up", "volume down", "volume"]
-command_keywords = [word_tokenize(command) for command in command_keywords]
+# make all the commands two words and lower case
+command_keywords = ["lights", 
+                    "lights", 
+                    "mute", 
+                    "volume"]
+#command_keywords = [word_tokenize(command) for command in command_keywords]
 
 # convert each plain english command to a vector
 command_database = [] # store the vector of each corresponding command
 print('Generating vector database of commands...')
 for keyword in command_keywords:
     command_database.append(pretrained_vectors[keyword])
-command_database = np.array(command_database)
+command_database = np.array(command_database).transpose() # transpose for later matrix multiplication
 print('Vector database of commands generated.')
 ######
 
