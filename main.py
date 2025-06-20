@@ -7,7 +7,7 @@ import gensim
 import nltk
 import gensim.downloader
 
-from faster_whisper import WhisperModel
+from utils.faster_whisper import WhisperModel
 from multiprocessing import Pool
 from utils.LARS_utils import offlineWhisperProcessor, onnxWraper
 from ctypes import * 
@@ -18,9 +18,9 @@ os.environ["TRANSFORMERS_OFFLINE"] = "1"
 device = "cuda" if torch.cuda.is_available() else "cpu"
 print("Using device: {}".format(device))
 
-processor = offlineWhisperProcessor(config_path="utils/preprocessor_config.json",
-                                    special_tokens_path="utils/tokenizer_config.json",
-                                    vocab_path="utils/vocab.json",
+processor = offlineWhisperProcessor(config_path="utils/configs/preprocessor_config.json",
+                                    special_tokens_path="utils/configs/tokenizer_config.json",
+                                    vocab_path="utils/configs/vocab.json",
                                     device=device
                                     )
 vad_model = onnxWraper(".model/silero_vad_16k_op15.onnx", force_cpu=False)
@@ -28,13 +28,11 @@ model = WhisperModel("small", device=device, compute_type="float32")
 pretrained_vectors = gensim.downloader.load("glove-wiki-gigaword-100")
 print("Loaded all models")
 
-clib = CDLL("./utils/micModule.so")
-
 #define c++ functions
-clib.accessMicrophone.argtypes = [c_char_p, c_uint, c_int, c_int, c_int, POINTER(c_int), c_float]
-clib.accessMicrophone.restype = POINTER(c_short)
-clib.freeBuffer.argtypes = [POINTER(c_short)]
-clib.freeBuffer.restype = None
+clib_mic.accessMicrophone.argtypes = [c_char_p, c_uint, c_int, c_int, c_int, POINTER(c_int), c_float]
+clib_mic.accessMicrophone.restype = POINTER(c_short)
+clib_mic.freeBuffer.argtypes = [POINTER(c_short)]
+clib_mic.freeBuffer.restype = None
 
 """
 Run three threads:
@@ -51,10 +49,10 @@ def audio_loop():
     print("Starting audio collection...")
     
     while running:
-        ptr = clib.accessMicrophone(mic_name, sample_rate, channels, buffer_frames, int(record_seconds), byref(sample_count), a) # collect mic data
+        ptr = clib_mic.accessMicrophone(mic_name, sample_rate, channels, buffer_frames, int(record_seconds), byref(sample_count), a) # collect mic data
         buffer = np.ctypeslib.as_array(ptr, shape=(sample_count.value,)) # if issues add .copy()
         buffer = buffer.astype(np.float32) / 32768.0 # convert to float32
-        clib.freeBuffer(ptr)
+        clib_mic.freeBuffer(ptr)
 
         buffer_que.append(buffer)
 
@@ -141,11 +139,11 @@ def parse_prediction(transcription):
     if lights_on and lights_off:
         command_byte1 &= ~0x01 # set both bits to 0
 
-    command_packet.append(int(command_byte1).to_bytes(1, 'big'))
+    command_packet.append(command_byte1)
 
 def send_commands():
-    # create a byte array of the command packet
-    print(command_packet)
+    # create a byte array of the command packet and send it to the serial port
+    
     command_packet[:] = [] # clear the command packet
 
 ### SET VARIABLES ###
