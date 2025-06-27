@@ -8,13 +8,11 @@ import nltk
 import gensim.downloader
 
 from utils.faster_whisper import WhisperModel
-from multiprocessing import Pool
 from utils.LARS_utils import offlineWhisperProcessor, onnxWraper
 from ctypes import * 
 from gensim.models import Word2Vec
 from nltk.tokenize import word_tokenize, sent_tokenize
 
-os.environ["TRANSFORMERS_OFFLINE"] = "1"
 device = "cuda" if torch.cuda.is_available() else "cpu"
 print("Using device: {}".format(device))
 
@@ -29,16 +27,28 @@ pretrained_vectors = gensim.downloader.load("glove-wiki-gigaword-100")
 print("Loaded all models")
 
 #define c++ functions
+clib_mic = CDLL("utils/micModule.so")
+clib_serial = CDLL("utils/serialModule.so")
+
 clib_mic.accessMicrophone.argtypes = [c_char_p, c_uint, c_int, c_int, c_int, POINTER(c_int), c_float]
 clib_mic.accessMicrophone.restype = POINTER(c_short)
 clib_mic.freeBuffer.argtypes = [POINTER(c_short)]
 clib_mic.freeBuffer.restype = None
 
+clib_serial.openSerialPort.argtypes = [c_char_p]
+clib_serial.openSerialPort.restype = c_int
+clib_serial.configureSerialPort.argtypes = [c_int, c_int, c_int]
+clib_serial.configureSerialPort.restype = c_bool
+clib_serial.writeSerial.argtypes = [c_int, c_char_p, c_size_t]
+clib_serial.writeSerial.restypes = c_int
+clib_serial.closeSerial.argtypes = [c_int]
+clib_serial.closeSerial.restypes = None
+
 """
-Run three threads:
+This script runs three threads:
     thread 1 (main): analyzing audio for voice activation and running predcition 
     thread 2 (audio): collecting and storing audio buffers
-    thread 3 (pi communication): sending commands and data to end deevices
+    thread 3 (pi communication): parsing transcripts and sening commands to end devices
 """
 
 def audio_loop():
@@ -90,61 +100,62 @@ def save_audio(audio):
 
 def parse_prediction(transcription):
     """
-    parse the transcription and return a list of commands
-    The command packet is a byte with a bit field for each command
-    There is a byte for related commands with Big Endian format.
-
-    https://www.rapidtables.com/convert/number/hex-to-binary.html?x=03
-
-    bitfield:
-        [a, b, c, d, e, _, _, _]
-        * if any bits are 0, then there is no command
-        a = 1 - turn on lights * if both light commands are 1 then do not send light command
-        b = 1 - turn off lights
-        c = 1 - mute the sound
-        d = 1 - turn volume up
-        e = 1 - turn volume down
-    """
-
-    # https://techolate.com/how-to-build-a-local-ai-agent-with-python-ollama-langchain-rag/
-    # for the transcription, grab three words at a time to create a 3xlen vector
-    # using three words at a time to get better context and allow for more than binary commands
+    parse the transcript and use matrix/vector math to find words/pharases which are similar to the desired command keywords
+    """ 
     transcription_vectors = []
+    transcription = " ".join(transcription)
     transcription = word_tokenize(transcription)
+    
     for word in transcription:
         word = word.lower()
         transcription_vectors.append(pretrained_vectors[word])
     transcription_vectors = np.array(transcription_vectors)
-    
+
     # calculate the cosine similarity between the transcription and each command
     # the matrix created will give the cosine similarity between each transcription and command, where
     #   a row is the similarity between the transcription and each command
-    dot_product = np.matmul(transcription_vectors, command_database) # does dot product for each row and column 
+    found_keywords = []
+    for i, kw_matrix in enumerate(vec_keyword_db):
+        if transcription_vectors.shape[-1] != kw_matrix.shape[0]: return # ensure we can do matrix multiplication
+        dot_prod = np.matmul(transcription_vectors, kw_matrix) # get the dot product for each row and col
+
+        transcription_norms = np.linalg.norm(transcription_vectors, axis=1, keepdims=True)
+        kw_norms = np.linalg.norm(kw_matrix, axis=0, keepdims=True)
+
+        dot_prod = dot_prod / (transcription_norms * kw_norms)
+        most_similar = np.argmax(dot_product, axis=1) # find the index of the highest cosine similarity
+
+        rows = np.arange(dot_prod.shape[0]) # make a vector to index each row
+        passing_scores = dot_prod[rows, most_similar] > similarity_threshold
+        if not np.any(passing_scores): continue # no found keywords 
+        
+        passing_inds = most_similar[passing_scores].tolist()
+        for ind in passing_inds: 
+            # store keywords by their absolute index in the list of lists
+            if i > 0: found_keywords.append(ind + len(nl_keyword_db[i-1]))
     
-    transcription_norms = np.linalg.norm(transcription_vectors, axis=1, keepdims=True)
-    command_norms = np.linalg.norm(command_database, axis=0, keepdims=True)
-    dot_product = dot_product / (transcription_norms * command_norms)
-    
-    most_similar = np.argmax(dot_product, axis=1) # find the index of the highest cosine similarity
+    send_commands(found_keywords)
 
-    command_byte1 = 0x00 # initialize the command byte to 0
-    for i, ind in enumerate(most_similar):
-        if dot_product[i, ind] > similarity_threshold:
-            command_byte1 |= 0x01 << ind # set the bit for the command by shifting it ind number of times to the left then adding it to the byte
+def send_commands(found_keywords):
+    """
+    Create a command packet with the keywords found in the transcription 
+    The command packet is a bitfield as shown in supplementary/bitfield.txt
 
-    # check to make sure the light commands dre not both 1
-    lights_on = (command_byte1 & 0x01) == 1
-    lights_off = (command_byte1 & 0x02) == 1
+    https://www.rapidtables.com/convert/number/hex-to-binary.html?x=03
+    """
 
-    if lights_on and lights_off:
-        command_byte1 &= ~0x01 # set both bits to 0
+    bitfield = 0x0000
+    num_bytes = 2
 
-    command_packet.append(command_byte1)
+    for ind in found_keywords:
+        bitfield |= 0x0001 << ind
 
-def send_commands():
-    # create a byte array of the command packet and send it to the serial port
-    
-    command_packet[:] = [] # clear the command packet
+    bitfield = bitfield.to_bytes(num_bytes, "big") # b'\x12\x34' ---> 0x1234
+    sent_bytes = clib_serial.writeSerial(serial, bitfield, num_bytes)
+    if sent_bytes == -1:
+        print("There was error writing to serial.")
+    else:
+        print("{} bytes where sent through serial".format(sent_bytes))
 
 ### SET VARIABLES ###
 running = True
@@ -164,28 +175,53 @@ buffer_que = [] # create a list to store if there is a buffer that needs to be a
 prediction_que = [] # store buffers to be predicted on in a list (queue)
 clear_que = False
 thres = 0.7 # voice activity threshold
-energy_threshold = 0.002 # energy threshold to trigger prediction
+energy_threshold = 0.001 # energy threshold to trigger prediction
+rel_thres = 0.15 # percent of chunks with VA to consider speech
 i = 0
 
-command_packet = []
-# make all the commands two words and lower case
-command_keywords = ["lights", 
-                    "lights", 
-                    "mute", 
-                    "volume"]
-#command_keywords = [word_tokenize(command) for command in command_keywords]
+# evaluate differnt length keywords individually on each transcript
+keywords_1 = ["lights",
+              "mute",
+              "unmute"]
+keywords_2 = ["lights on",
+              "lights off",
+              "volume down",
+              "volume up",]
+keywords_3 = ["overhead lamp off",
+              "overhead lamp on",
+              "desk lights off",
+              "desk lights on",
+              "set aux audio",
+              "set phono audio"]
+# convert sentances to lists of words
+keywords_2 = [word_tokenize(kw) for kw in keywords_2]
+keywords_3 = [word_tokenize(kw) for kw in keywords_3]
 
 # convert each plain english command to a vector
-command_database = [] # store the vector of each corresponding command
+nl_keyword_db = [keywords_3, keywords_2, keywords_1] # use this later when parsing transcripts
+vec_keyword_db = [keywords_3, keywords_2, keywords_1] # check from longest to shortest so we don't find "lights" but really the keyword is "lights on" 
 print('Generating vector database of commands...')
-for keyword in command_keywords:
-    command_database.append(pretrained_vectors[keyword])
-command_database = np.array(command_database).transpose() # transpose for later matrix multiplication
+for i, kw_list in enumerate(vec_keyword_db):
+    db = []
+    for kw in kw_list:
+        db.append(pretrained_vectors[kw])
+    vec_keyword_db[i] = np.array(db).transpose()
 print('Vector database of commands generated.')
+
+serial = 0
+serial_portname = b"/dev/tty"
+serial_speed = 115200
+expected_serial_bytes = 2
 ######
 
 if __name__ == "__main__":
-    pool = Pool(processes=1)
+    global serial # so send_commands() can access the serial file id
+
+    serial = clib_serial.openSerialPort(serial_portname)
+    if serial == -1:
+        exit() # there was an issue opening the serial port
+    if not clib_serial.configureSerialPort(serial, serial_speed, expected_serial_bytes):
+        exit() # there was an issue configuring the serial port
     
     audio_thread1 = threading.Thread(target=audio_loop, daemon=True)
     audio_thread1.start()
@@ -196,9 +232,10 @@ if __name__ == "__main__":
             if len(buffer_que) > 0:
                 vad_pred = vad_model(torch.from_numpy(buffer_que[0]))
                 num_speech_chunks = torch.sum((vad_pred > thres).int()).item()
+                rel_speech_chunks = num_speech_chunks / vad_pred.shape[0]
                 audio_energy = torch.mean(torch.abs(torch.from_numpy(buffer_que[0])))
 
-                if num_speech_chunks > 0 and len(prediction_que) < int(30 / record_seconds) and audio_energy > energy_threshold:
+                if rel_speech_chunks > rel_thres and len(prediction_que) < int(30 / record_seconds) and audio_energy > energy_threshold:
                     prediction_que.append(buffer_que[0])
 
                 elif len(prediction_que) > 0:
@@ -217,11 +254,12 @@ if __name__ == "__main__":
                     i = 0
                     clear_que = False
 
-                pool.apply_async(parse_prediction, (transcription,), callback=send_commands) # asynchronously parse the prediction and send the commands to the raspberry pi
+                # send the prediction off to be parsed for keywords in another thread
+                t = threading.Thread(target=parse_prediction, args=transcription, daemon=True)
+                t.start()
 
     except KeyboardInterrupt:
         print("\nStopping...")
         running = False
         audio_thread1.join()
-        pool.close()
-        pool.terminate()
+        clib_serial.closeSerial(serial)

@@ -1,0 +1,23 @@
+bitfield: 
+# these are ordered the way they are because of how the keyword 
+# Big Endian format
+lists are setup
+        [a, b, c, d, e, f, g, h, 
+        i, j, k, l, m, _ , _ , _]
+        * if any bits are 0, then there is no command at that bit
+        ----- three word keywords -----
+        a = 1 - overhead lamp off 
+        b = 1 - overhead lamp off
+        c = 1 - desk lights off
+        d = 1 - desk lights on
+        e = 1 - set aux audio
+        f = 1 - set phono audio
+        ----- two word keywords -----
+        g = 1 - lights on
+        h = 1 - lights off
+        i = 1 - volume down
+        j = 1 - volume up
+        ----- one word keywords -----
+        k = 1 - lights (change the state of lights currently)
+        l = 1 - mute 
+        m = 1 - unmute

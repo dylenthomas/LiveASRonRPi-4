@@ -77,7 +77,12 @@ extern "C" {
 
 extern "C" {
     int writeSerial(int fd, const char* buffer, size_t n) {
-        return write(fd, buffer, n);
+        ssize_t sent_bytes = write(fd, buffer, n);
+        if (sent_bytes == -1) {
+            cerr << "Error sending data to serial" << strerror(errno) << endl;
+            return -1;
+        }
+        return static_cast<int>(sent_bytes);
     }
 }
 
