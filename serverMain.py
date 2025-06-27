@@ -76,9 +76,9 @@ def prediction(prediction_que, i = 0):
     segments = model.transcribe(features, beam_size=5, language="en")
 
     # Move cursor up by the number of segments (or clear screen if first run)
-    if i == 0: # clear the screen if first run and move cursor to top left
-        print("\033[2J \033[H")
-    print('\033[F' * i, end='', flush=True)
+    #if i == 0: # clear the screen if first run and move cursor to top left
+    #    print("\033[2J \033[H")
+    #print('\033[F' * i, end='', flush=True)
     i = 0
     for segment in segments:
         print("[%.2fs -> %.2fs] \t%s" % (segment.start, segment.end, segment.text))
@@ -102,28 +102,37 @@ def parse_prediction(transcription):
     """
     parse the transcript and use matrix/vector math to find words/pharases which are similar to the desired command keywords
     """ 
-    transcription_vectors = []
     transcription = " ".join(transcription)
     transcription = word_tokenize(transcription)
-    
-    for word in transcription:
-        word = word.lower()
-        transcription_vectors.append(pretrained_vectors[word])
-    transcription_vectors = np.array(transcription_vectors)
+
+    # make a list of lists to get multiple word chunks that line up with the comand keyword vectors
+    transcrpt_vecs = []
+    for i in range(len(vec_keyword_db)):
+        i = len(vec_keyword_db) - i # count down from longest to shortest to match the keyword formatting
+
+        vec = []
+        for w in range(len(transcription) - (i - 1)):
+            words = [word.lower() for word in transcription[w : w + i]]
+            if i == 1:
+                vec.append(pretrained_vectors[words[0]])
+            else:
+                vec.append(np.concatenate(pretrained_vectors[words]))
+        vec = np.array(vec)
+        transcrpt_vecs.append(vec)
 
     # calculate the cosine similarity between the transcription and each command
     # the matrix created will give the cosine similarity between each transcription and command, where
     #   a row is the similarity between the transcription and each command
     found_keywords = []
     for i, kw_matrix in enumerate(vec_keyword_db):
-        if transcription_vectors.shape[-1] != kw_matrix.shape[0]: return # ensure we can do matrix multiplication
-        dot_prod = np.matmul(transcription_vectors, kw_matrix) # get the dot product for each row and col
+        t_vec = transcrpt_vecs[i]
+        dot_prod = np.matmul(t_vec, kw_matrix) # get the dot product for each row and col
 
-        transcription_norms = np.linalg.norm(transcription_vectors, axis=1, keepdims=True)
+        t_norms = np.linalg.norm(t_vec, axis=1, keepdims=True)
         kw_norms = np.linalg.norm(kw_matrix, axis=0, keepdims=True)
 
-        dot_prod = dot_prod / (transcription_norms * kw_norms)
-        most_similar = np.argmax(dot_product, axis=1) # find the index of the highest cosine similarity
+        dot_prod = dot_prod / (t_norms * kw_norms)
+        most_similar = np.argmax(dot_prod, axis=1) # find the index of the highest cosine similarity
 
         rows = np.arange(dot_prod.shape[0]) # make a vector to index each row
         passing_scores = dot_prod[rows, most_similar] > similarity_threshold
@@ -151,11 +160,12 @@ def send_commands(found_keywords):
         bitfield |= 0x0001 << ind
 
     bitfield = bitfield.to_bytes(num_bytes, "big") # b'\x12\x34' ---> 0x1234
-    sent_bytes = clib_serial.writeSerial(serial, bitfield, num_bytes)
-    if sent_bytes == -1:
-        print("There was error writing to serial.")
-    else:
-        print("{} bytes where sent through serial".format(sent_bytes))
+    print(bitfield)
+    #sent_bytes = clib_serial.writeSerial(serial, bitfield, num_bytes)
+    #if sent_bytes == -1:
+    #    print("There was error writing to serial.")
+    #else:
+    #    print("{} bytes where sent through serial".format(sent_bytes))
 
 ### SET VARIABLES ###
 running = True
@@ -181,8 +191,8 @@ i = 0
 
 # evaluate differnt length keywords individually on each transcript
 keywords_1 = ["lights",
-              "mute",
-              "unmute"]
+              "mute",]
+              #"unmute"]
 keywords_2 = ["lights on",
               "lights off",
               "volume down",
@@ -204,24 +214,26 @@ print('Generating vector database of commands...')
 for i, kw_list in enumerate(vec_keyword_db):
     db = []
     for kw in kw_list:
-        db.append(pretrained_vectors[kw])
+        if i == len(vec_keyword_db) - 1: # one word keywords
+            db.append(pretrained_vectors[kw])
+        else:
+            db.append(np.concatenate(pretrained_vectors[kw]))
     vec_keyword_db[i] = np.array(db).transpose()
 print('Vector database of commands generated.')
 
-serial = 0
 serial_portname = b"/dev/tty"
 serial_speed = 115200
 expected_serial_bytes = 2
 ######
 
 if __name__ == "__main__":
-    global serial # so send_commands() can access the serial file id
+    #global serial # so send_commands() can access the serial file id
 
-    serial = clib_serial.openSerialPort(serial_portname)
-    if serial == -1:
-        exit() # there was an issue opening the serial port
-    if not clib_serial.configureSerialPort(serial, serial_speed, expected_serial_bytes):
-        exit() # there was an issue configuring the serial port
+    #serial = clib_serial.openSerialPort(serial_portname)
+    #if serial == -1:
+    #    exit() # there was an issue opening the serial port
+    #if not clib_serial.configureSerialPort(serial, serial_speed, expected_serial_bytes):
+    #    exit() # there was an issue configuring the serial port
     
     audio_thread1 = threading.Thread(target=audio_loop, daemon=True)
     audio_thread1.start()
@@ -262,4 +274,4 @@ if __name__ == "__main__":
         print("\nStopping...")
         running = False
         audio_thread1.join()
-        clib_serial.closeSerial(serial)
+        #clib_serial.closeSerial(serial)

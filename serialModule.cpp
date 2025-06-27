@@ -6,7 +6,7 @@
 #include <unistd.h>
 using namespace std;
 
-// g++ -fPIC -shared -o utils/serialModule.so serialModule.cpp -lboost_system -lpthread
+// g++-9 -fPIC -shared -o utils/serialModule.so serialModule.cpp
 
 extern "C" {
     int openSerialPort(const char* portname) {
@@ -60,18 +60,34 @@ extern "C" {
 }
 
 extern "C" {
-    int readSerial(int fd, char* buffer, size_t n) {
-        ssize_t total_read = 0;
-        while (total_read < n) {
-            ssize_t bytes = read(fd, buffer + total_read, n - total_read);
-            // buffer + total_read moves the pointer forward in buffer by total_read bytes
+    bool* readSerial(int fd, char* buffer, size_t n, ssize_t* total_read) {
+        // function to read the serial port for this specific application
+        int read_bytes = 0; // internally keep track of read bytes
+        while (read_bytes < n) {
+            ssize_t bytes = read(fd, buffer + read_bytes, n - read_bytes);
+            // buffer + read_bytes moves the pointer forward in buffer by read_bytes bytes
             if (bytes < 0) {
                 cerr << "Error when reading serial buffer: " << strerror(errno) << endl;
-                return -1;
+                return nullptr; // in python must check "if not result" where result would be the nullptr if if failed to read
             }
-        total_read += bytes;
+        read_bytes += bytes;
         }
-        return static_cast<int>(total_read);
+        *total_read = read_bytes; // tell the python program how many bytes where read
+
+        // since bytes is a bitfiled, mask it to get the intended commands (Big Endian format)
+        size_t total_bits = read_bytes * 8;
+        bool* bit_array = new bool[total_bits];
+        
+        for (size_t byte_ind = 0; byte_ind < read_bytes; byte_ind++) {
+            unsigned char byte = static_cast<unsigned char>(buffer[byte_ind]);
+            for (size_t b = 0; b < 8; b++) {
+                // mask Big Endian formated bytes
+                bit_array[b + 8 * byte_ind] = (byte & (0x01 << (7 - b))) == 1;
+            }
+            
+        }
+        
+        return bit_array;
     }
 }
 
