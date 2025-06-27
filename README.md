@@ -1,5 +1,5 @@
 # LARS
-#### Live Asr on Raspberry-pi S (LARS)
+### Live Asr with a Raspberry-pi as the end device and a dGPU on a Server doing all the heavy lifting (LARS)
 
 codebase to run ASR on a raspberry pi 4 and control smart relays with it.
 
