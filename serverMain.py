@@ -5,26 +5,25 @@ import torch
 import threading
 import gensim
 import nltk
-import gensim.downloader
+import re 
 
 from utils.faster_whisper import WhisperModel
 from utils.LARS_utils import offlineWhisperProcessor, onnxWraper
+from utils.kwHelper import kwVectorHelper
 from ctypes import * 
-from gensim.models import Word2Vec
-from nltk.tokenize import word_tokenize, sent_tokenize
+from concurrent.futures import ThreadPoolExecutor
+from nltk.tokenize import word_tokenize
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 print("Using device: {}".format(device))
 
 processor = offlineWhisperProcessor(config_path="utils/configs/preprocessor_config.json",
                                     special_tokens_path="utils/configs/tokenizer_config.json",
-                                    vocab_path="utils/configs/vocab.json",
-                                    device=device
+                                    vocab_path="utils/configs/vocab.json", device=device
                                     )
+kw_helper = kwVectorHelper()
 vad_model = onnxWraper(".model/silero_vad_16k_op15.onnx", force_cpu=False)
 model = WhisperModel("small", device=device, compute_type="float32")
-pretrained_vectors = gensim.downloader.load("glove-wiki-gigaword-100")
-print("Loaded all models")
 
 #define c++ functions
 clib_mic = CDLL("utils/micModule.so")
@@ -76,13 +75,14 @@ def prediction(prediction_que, i = 0):
     segments = model.transcribe(features, beam_size=5, language="en")
 
     # Move cursor up by the number of segments (or clear screen if first run)
-    #if i == 0: # clear the screen if first run and move cursor to top left
-    #    print("\033[2J \033[H")
-    #print('\033[F' * i, end='', flush=True)
+    if i == 0: # clear the screen if first run and move cursor to top left
+        print("\033[2J \033[H")
+    print('\033[F' * i, end='', flush=True)
     i = 0
     for segment in segments:
         print("[%.2fs -> %.2fs] \t%s" % (segment.start, segment.end, segment.text))
-        transcription.append(segment.text)
+        cleaned_text = re.sub(r'[^\w\s]', '', segment.text) # remove all non characters and whitespace
+        transcription.append(cleaned_text)
         i += 1
 
     return i, transcription
@@ -106,26 +106,20 @@ def parse_prediction(transcription):
     transcription = word_tokenize(transcription)
 
     # make a list of lists to get multiple word chunks that line up with the comand keyword vectors
-    transcrpt_vecs = []
-    for i in range(len(vec_keyword_db)):
-        i = len(vec_keyword_db) - i # count down from longest to shortest to match the keyword formatting
+    transcrpt_vecs = kw_helper.transcript2mat(transcription)
 
-        vec = []
-        for w in range(len(transcription) - (i - 1)):
-            words = [word.lower() for word in transcription[w : w + i]]
-            if i == 1:
-                vec.append(pretrained_vectors[words[0]])
-            else:
-                vec.append(np.concatenate(pretrained_vectors[words]))
-        vec = np.array(vec)
-        transcrpt_vecs.append(vec)
-
-    # calculate the cosine similarity between the transcription and each command
-    # the matrix created will give the cosine similarity between each transcription and command, where
-    #   a row is the similarity between the transcription and each command
+    # calculate the cosine similarity between the transcription and each keyword 
+    # the matrix created will give the cosine similarity between each transcription and keyword, where
+    #   a row is the similarity between a given chunk of the transcript and each keyword 
     found_keywords = []
     for i, kw_matrix in enumerate(vec_keyword_db):
         t_vec = transcrpt_vecs[i]
+
+        # if there is a transcript shorter than some keywords there wont be a vector for it, so skip that length
+        if len(t_vec) == 0: continue
+        # if we get to one word keywords, but the transcript is longer than one word assume there is no intended keyword present
+        if i == 2 and len(transcription) > 1: continue
+        
         dot_prod = np.matmul(t_vec, kw_matrix) # get the dot product for each row and col
 
         t_norms = np.linalg.norm(t_vec, axis=1, keepdims=True)
@@ -139,10 +133,10 @@ def parse_prediction(transcription):
         if not np.any(passing_scores): continue # no found keywords 
         
         passing_inds = most_similar[passing_scores].tolist()
-        for ind in passing_inds: 
-            # store keywords by their absolute index in the list of lists
-            if i > 0: found_keywords.append(ind + len(nl_keyword_db[i-1]))
-    
+        for ind in passing_inds:
+            found_kw = " ".join(transcription[ind:ind + (i + 1)]).lower()
+            found_keywords.append(nl_keyword_db[found_kw])
+
     send_commands(found_keywords)
 
 def send_commands(found_keywords):
@@ -152,15 +146,15 @@ def send_commands(found_keywords):
 
     https://www.rapidtables.com/convert/number/hex-to-binary.html?x=03
     """
-
     bitfield = 0x0000
     num_bytes = 2
 
     for ind in found_keywords:
         bitfield |= 0x0001 << ind
+    
+    if bitfield == 0: return # no keywords
 
     bitfield = bitfield.to_bytes(num_bytes, "big") # b'\x12\x34' ---> 0x1234
-    print(bitfield)
     #sent_bytes = clib_serial.writeSerial(serial, bitfield, num_bytes)
     #if sent_bytes == -1:
     #    print("There was error writing to serial.")
@@ -189,37 +183,8 @@ energy_threshold = 0.001 # energy threshold to trigger prediction
 rel_thres = 0.15 # percent of chunks with VA to consider speech
 i = 0
 
-# evaluate differnt length keywords individually on each transcript
-keywords_1 = ["lights",
-              "mute",]
-              #"unmute"]
-keywords_2 = ["lights on",
-              "lights off",
-              "volume down",
-              "volume up",]
-keywords_3 = ["overhead lamp off",
-              "overhead lamp on",
-              "desk lights off",
-              "desk lights on",
-              "set aux audio",
-              "set phono audio"]
-# convert sentances to lists of words
-keywords_2 = [word_tokenize(kw) for kw in keywords_2]
-keywords_3 = [word_tokenize(kw) for kw in keywords_3]
-
-# convert each plain english command to a vector
-nl_keyword_db = [keywords_3, keywords_2, keywords_1] # use this later when parsing transcripts
-vec_keyword_db = [keywords_3, keywords_2, keywords_1] # check from longest to shortest so we don't find "lights" but really the keyword is "lights on" 
-print('Generating vector database of commands...')
-for i, kw_list in enumerate(vec_keyword_db):
-    db = []
-    for kw in kw_list:
-        if i == len(vec_keyword_db) - 1: # one word keywords
-            db.append(pretrained_vectors[kw])
-        else:
-            db.append(np.concatenate(pretrained_vectors[kw]))
-    vec_keyword_db[i] = np.array(db).transpose()
-print('Vector database of commands generated.')
+nl_keyword_db = kw_helper.get_encodings()
+vec_keyword_db = kw_helper.get_kw_mat()
 
 serial_portname = b"/dev/tty"
 serial_speed = 115200
@@ -234,6 +199,8 @@ if __name__ == "__main__":
     #    exit() # there was an issue opening the serial port
     #if not clib_serial.configureSerialPort(serial, serial_speed, expected_serial_bytes):
     #    exit() # there was an issue configuring the serial port
+    
+    executor = ThreadPoolExecutor(max_workers=int(30/record_seconds)) # the most threads that would be needed
     
     audio_thread1 = threading.Thread(target=audio_loop, daemon=True)
     audio_thread1.start()
@@ -267,11 +234,13 @@ if __name__ == "__main__":
                     clear_que = False
 
                 # send the prediction off to be parsed for keywords in another thread
-                t = threading.Thread(target=parse_prediction, args=transcription, daemon=True)
+                #executor.submit(parse_prediction, transcription)
+                t = threading.Thread(target=parse_prediction, args=(transcription,), daemon=True) # args expects an iterable
                 t.start()
 
     except KeyboardInterrupt:
         print("\nStopping...")
         running = False
+        executor.shutdown(wait=True)
         audio_thread1.join()
         #clib_serial.closeSerial(serial)
