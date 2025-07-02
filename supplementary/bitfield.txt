@@ -7,7 +7,7 @@ lists are setup
         * if any bits are 0, then there is no command at that bit
         ----- three word keywords -----
         a = 1 - overhead lamp off 
-        b = 1 - overhead lamp off
+        b = 1 - overhead lamp on
         c = 1 - desk lights off
         d = 1 - desk lights on
         e = 1 - set aux audio

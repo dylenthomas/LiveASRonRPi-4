@@ -60,9 +60,11 @@ extern "C" {
 }
 
 extern "C" {
-    bool* readSerial(int fd, char* buffer, size_t n, ssize_t* total_read) {
+    bool* readSerial(int fd, size_t n, ssize_t* total_read) {
         // function to read the serial port for this specific application
         int read_bytes = 0; // internally keep track of read bytes
+        char buffer[n];
+
         while (read_bytes < n) {
             ssize_t bytes = read(fd, buffer + read_bytes, n - read_bytes);
             // buffer + read_bytes moves the pointer forward in buffer by read_bytes bytes

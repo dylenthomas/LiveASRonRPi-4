@@ -5,8 +5,8 @@ from gensim.models import Word2Vec
 from nltk.tokenize import word_tokenize
 
 ONE = ["lights",
-       "mute",]
-       #"unmute"]
+       "mute",
+       "unmute"]
 TWO = ["lights on",
        "lights off",
        "volume down",
@@ -65,8 +65,3 @@ class kwVectorHelper:
             transcrpt_vecs.append(vec)
 
         return transcrpt_vecs
-
-class kwActionTranslator:
-    """
-    Convert the recieved boolean array representing the bitfield recieved and translate that into actions
-    """

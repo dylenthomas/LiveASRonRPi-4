@@ -75,9 +75,9 @@ def prediction(prediction_que, i = 0):
     segments = model.transcribe(features, beam_size=5, language="en")
 
     # Move cursor up by the number of segments (or clear screen if first run)
-    if i == 0: # clear the screen if first run and move cursor to top left
-        print("\033[2J \033[H")
-    print('\033[F' * i, end='', flush=True)
+    #if i == 0: # clear the screen if first run and move cursor to top left
+    #    print("\033[2J \033[H")
+    #print('\033[F' * i, end='', flush=True)
     i = 0
     for segment in segments:
         print("[%.2fs -> %.2fs] \t%s" % (segment.start, segment.end, segment.text))
@@ -194,11 +194,11 @@ expected_serial_bytes = 2
 if __name__ == "__main__":
     #global serial # so send_commands() can access the serial file id
 
-    #serial = clib_serial.openSerialPort(serial_portname)
-    #if serial == -1:
-    #    exit() # there was an issue opening the serial port
-    #if not clib_serial.configureSerialPort(serial, serial_speed, expected_serial_bytes):
-    #    exit() # there was an issue configuring the serial port
+    serial = clib_serial.openSerialPort(serial_portname)
+    if serial == -1:
+        raise("There was an issue starting the serial port: {}".format(serial_portname))
+    if not clib_serial.configureSerialPort(serial, serial_speed, expected_serial_bytes):
+        raise("There was an issue configuring the serial port")
     
     executor = ThreadPoolExecutor(max_workers=int(30/record_seconds)) # the most threads that would be needed
     
@@ -216,6 +216,7 @@ if __name__ == "__main__":
 
                 if rel_speech_chunks > rel_thres and len(prediction_que) < int(30 / record_seconds) and audio_energy > energy_threshold:
                     prediction_que.append(buffer_que[0])
+                    print("added to prediction :)")
 
                 elif len(prediction_que) > 0:
                     # no speech detected or there is no room left in the que
@@ -225,18 +226,20 @@ if __name__ == "__main__":
                 del buffer_que[0]
 
             if len(prediction_que) > 0:
+                print(len(prediction_que))
                 i, transcription = prediction(prediction_que, i)
                 #save_audio(prediction_que)
 
                 if clear_que:
                     prediction_que[:] = [] # clear the prediction que
+                    print("que cleared")
                     i = 0
                     clear_que = False
 
                 # send the prediction off to be parsed for keywords in another thread
-                #executor.submit(parse_prediction, transcription)
-                t = threading.Thread(target=parse_prediction, args=(transcription,), daemon=True) # args expects an iterable
-                t.start()
+                executor.submit(parse_prediction, transcription)
+                #t = threading.Thread(target=parse_prediction, args=(transcription,), daemon=True) # args expects an iterable
+                #t.start()
 
     except KeyboardInterrupt:
         print("\nStopping...")
