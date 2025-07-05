@@ -18,10 +18,21 @@ for i, samp in enumerate(corpus):
     samp = samp[0:colon]
     corpus[i] = samp
 
-# rejoin into a string 
-corpus = ", ".join(corpus)
+# format for training
+corpus = [[x] for x in corpus]
 
-# write into text file
+# rejoin into a string then write into a text file
+#corpus = ", ".join(corpus)
+
 #with open("processedWhisperCorpus.txt", "w") as processed:
 #    processed.write(corpus)
 #    processed.close()
+
+model = Word2Vec(sentences=corpus, vector_size=25, window=5, min_count=1, workers=4)
+model.train(corpus, total_examples=1, epochs=100)
+model = model.wv
+
+print(model['lights', 'on'])
+print(model['lights', 'on'].shape)
+
+model.save("../.model/LARS.wordvectors")

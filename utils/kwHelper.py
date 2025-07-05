@@ -1,7 +1,7 @@
 import gensim.downloader
 import numpy as np
 
-from gensim.models import Word2Vec
+from gensim.models import KeyedVectors
 from nltk.tokenize import word_tokenize
 
 ONE = ["lights",
@@ -23,7 +23,8 @@ THREE = [word_tokenize(kw) for kw in THREE]
 
 class kwVectorHelper:
     def __init__(self):
-        self.vector_model = gensim.downloader.load("glove-wiki-gigaword-100")
+        #self.vector_model = gensim.downloader.load("glove-wiki-gigaword-100")
+        self.vector_model = KeyedVectors.load("/home/dylenthomas/LiveASRonRPi-4/.model/LARS.wordvectors")
         self.vecs = [THREE, TWO, ONE] # check from longest to shortest to avoid scenarios where a shorter keyword that lies in a longer one is identified as the indended keyword
         self.encodings = {}
 
