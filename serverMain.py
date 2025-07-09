@@ -17,12 +17,16 @@ from nltk.tokenize import word_tokenize
 device = "cuda" if torch.cuda.is_available() else "cpu"
 print("Using device: {}".format(device))
 
+print("Starting whisper processor...")
 processor = offlineWhisperProcessor(config_path="utils/configs/preprocessor_config.json",
                                     special_tokens_path="utils/configs/tokenizer_config.json",
                                     vocab_path="utils/configs/vocab.json", device=device
                                     )
+print("Creating Vectors for commands..")
 kw_helper = kwVectorHelper()
+print("Starting VAD model...")
 vad_model = onnxWraper(".model/silero_vad_16k_op15.onnx", force_cpu=False)
+print("Starting Whisper...")
 model = WhisperModel("small", device=device, compute_type="float32")
 
 #define c++ functions
@@ -47,7 +51,8 @@ clib_serial.closeSerial.restypes = None
 This script runs three threads:
     thread 1 (main): analyzing audio for voice activation and running predcition 
     thread 2 (audio): collecting and storing audio buffers
-    thread 3 (pi communication): parsing transcripts and sening commands to end devices
+    thread 3 (ui): a ui running on the server so I can see a live transcription and other information
+    threads 4+ (pi communication): parsing transcripts and sening commands to end devices
 """
 
 def audio_loop():
@@ -75,9 +80,9 @@ def prediction(prediction_que, i = 0):
     segments = model.transcribe(features, beam_size=5, language="en")
 
     # Move cursor up by the number of segments (or clear screen if first run)
-    #if i == 0: # clear the screen if first run and move cursor to top left
-    #    print("\033[2J \033[H")
-    #print('\033[F' * i, end='', flush=True)
+    if i == 0: # clear the screen if first run and move cursor to top left
+        print("\033[2J \033[H")
+    print('\033[F' * i, end='', flush=True)
     i = 0
     for segment in segments:
         print("[%.2fs -> %.2fs] \t%s" % (segment.start, segment.end, segment.text))
@@ -142,27 +147,28 @@ def parse_prediction(transcription):
 def send_commands(found_keywords):
     """
     Create a command packet with the keywords found in the transcription 
-    The command packet is a bitfield as shown in supplementary/bitfield.txt
+    The command packet is created with command encodings where the command is encoded as its index in the list
 
     https://www.rapidtables.com/convert/number/hex-to-binary.html?x=03
     """
-    bitfield = 0x0000
-    num_bytes = 2
+    packet = ''
+    for i in found_keywords:
+        packet += str(i) + ',' # seperate each command by a comma
+    if len(packet) == 0: return # no keywords
+    print(packet)
 
-    for ind in found_keywords:
-        bitfield |= 0x0001 << ind
-    
-    if bitfield == 0: return # no keywords
+    # send the data as a character array of bytes
+    #sent_bytes = clib_serial.writeSerial(serial, packet.encode('utf-8'), len(packet))
 
-    bitfield = bitfield.to_bytes(num_bytes, "big") # b'\x12\x34' ---> 0x1234
-    #sent_bytes = clib_serial.writeSerial(serial, bitfield, num_bytes)
     #if sent_bytes == -1:
     #    print("There was error writing to serial.")
     #else:
     #    print("{} bytes where sent through serial".format(sent_bytes))
+    #    commands_sent = True
 
 ### SET VARIABLES ###
 running = True
+commands_sent = False
 
 sample_count = c_int()
 mic_name = b"plughw:CARD=Snowball"
@@ -216,7 +222,6 @@ if __name__ == "__main__":
 
                 if rel_speech_chunks > rel_thres and len(prediction_que) < int(30 / record_seconds) and audio_energy > energy_threshold:
                     prediction_que.append(buffer_que[0])
-                    print("added to prediction :)")
 
                 elif len(prediction_que) > 0:
                     # no speech detected or there is no room left in the que
@@ -226,18 +231,22 @@ if __name__ == "__main__":
                 del buffer_que[0]
 
             if len(prediction_que) > 0:
-                print(len(prediction_que))
                 i, transcription = prediction(prediction_que, i)
-                #save_audio(prediction_que)
 
                 if clear_que:
                     prediction_que[:] = [] # clear the prediction que
-                    print("que cleared")
                     i = 0
                     clear_que = False
+                    # reset the variable stopping serial communication
+                    commands_sent = False
 
                 # send the prediction off to be parsed for keywords in another thread
-                executor.submit(parse_prediction, transcription)
+                # run a thread to parse the prediciton each time the transcript is re made so that as soon as it detects a command after n runs it immediatley gets it
+                # this should be fine assuming a low number of commands will be requested at a time and false positive rates are very low
+                # then once a command packet is sent for this transcription chunk don't allow sending until the next chunk
+                if not commands_sent:
+                    executor.submit(parse_prediction, transcription)
+                
                 #t = threading.Thread(target=parse_prediction, args=(transcription,), daemon=True) # args expects an iterable
                 #t.start()
 

@@ -34,5 +34,7 @@ model = model.wv
 
 print(model['lights', 'on'])
 print(model['lights', 'on'].shape)
+print(model['phono'])
+print(model['phono'].shape)
 
 model.save("../.model/LARS.wordvectors")

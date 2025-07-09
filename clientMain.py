@@ -1,59 +1,85 @@
 import RPi.GPIO as GPIO
 
+from utils.kwHelper import kwVectorHelper
 from ctypes import *
 
 class kwActionTranslator:
     """
     Convert the recieved boolean array representing the bitfield recieved and translate that into actions
     """
-    def __init__(self, pins_encoding)
+    def __init__(self)
         #pin, on or off (false = off, true = on, none = binary switch)
-        self.encoding = {
-            "0": (15, False),
-            "1": (15, True),
-            "2": (18, False),
-            "3": (18, True),
-            "4": (),
-            "5": (),
-            "6": (16, True),
-            "7": (16, False),
-            "8": (),
-            "9": (),
-            "10": (16, None),
-            "11": (),
-            "12": ()
+        kw_helper = kwVectorHelper()
+        self.cmd_encodings = kw_helper.get_encodings()
+        # switch the values for keys and keys for values so we can get a action by its index
+        self.cmd_encodings = {
+            value: key for key, value in self.cmd_encodings.items()
+        }
+        
+        # encode commands to a bool or none value if the command is inheriently binary
+        # none means the command is binary so it just switches the current state
+        # false means the command turns a pin low
+        # true means the command turn a pin high
+        self.binary_actions {
+            "lights": None,
+            "lights on": True,
+            "lights off": False,
+            "overhead lamp off": False,
+            "overhead lamp on": True,
+            "desk lights off": False,
+            "desk lights on": True,
         }
 
         # encode pin actions to their pin numbers
         self.pins = {
             "lights": 16,
-            "overhead lamp": 15,
-            "desk lights": 18
+            "lights on": 16,
+            "lights off": 16,
+            "overhead lamp off": 15,
+            "overhead lamp on": 15
+            "desk lights off": 18,
+            "desk lights on": 18
         }
 
         # keep track of the state of the pins
         self.pin_states = {
-            "16": None,
-            "15": None,
-            "18": None
+            "16": False,
+            "15": False,
+            "18": False
         }
 
-    def parseKWS(self, bool_arr):
-        actions = [] # pins/things that need to be actviated
+    def parseKWS(self, packet):
+        actions = [] # pins and a corresponding action
+        packet = packet.split(',') # get as a list of strings by splitting at the comma values
 
-        for i, bl in enumerate(bool_arr):
-            if bl:
-                act = self.encoding[str(i)]
-                # if a binary action check the current state
-                if act[1] is None:
-                    state = self.pin_states[str(act[0])]
-                    if state is None or not state:
-                        act[1] = True
-                    else:
-                        act[1] = False
+        # use the int from packet which corresponds to a command
+        for i in packet:
+            # get the command name and its pin
+            cmd = self.cmd_encodings[i]
+            pin = self.pins[cmd]
 
-                actions.append(act)
-                self.pin_states[str(act[0])] = act[1] # update pin states
+            # get the type of action
+            act = 'not binary'
+            for k in self.binary_actions.keys():
+                if cmd == k:
+                    act = self.binary_actions[k]
+            
+            # check act was assigned a binary action
+            if act == 'not binary':
+                continue
+
+            # if action is binary flip current state
+            state = self.pin_states[str(pin)]
+            if act == None:
+                # swap the current state
+                new_state = not state
+                actions.append((pin, new_state))
+            else:
+                # just send the bool value of act
+                new_state = act
+                actions.append((pin, new_state))
+
+            self.pin_states[str(pin)] = new_state # update pin states
 
         return actions 
 
@@ -92,15 +118,15 @@ if __name__ == "__main__":
 
     try:
         while running:
-            cmd_bool = clib_serial.readSerial(serial, expected_serial_bytes, total_read)
-            if not cmd_bool:
+            rec_packet = clib_serial.readSerial(serial, expected_serial_bytes, total_read)
+            if not rec_packet:
                 print("There was an issue reading serial port")
                 continue
 
-            actions = kw_translator.parseKWS(cmd_bool)
+            actions = kw_translator.parseKWS(rec_packet)
             for action in actions:
-                p = actions[0]
-                tg = actions[1]
+                p = actions[0] # pin for the current action
+                tg = actions[1] # bool indicating how to change the state
                 if tg: GPIO.output(p, GPIO.HIGH)
                 else: GPIO.output(p, GPIO.LOW)
 

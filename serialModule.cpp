@@ -60,7 +60,7 @@ extern "C" {
 }
 
 extern "C" {
-    bool* readSerial(int fd, size_t n, ssize_t* total_read) {
+    char* readSerial(int fd, size_t n, ssize_t* total_read) {
         // function to read the serial port for this specific application
         int read_bytes = 0; // internally keep track of read bytes
         char buffer[n];
@@ -75,21 +75,22 @@ extern "C" {
         read_bytes += bytes;
         }
         *total_read = read_bytes; // tell the python program how many bytes where read
+        return buffer;
 
         // since bytes is a bitfiled, mask it to get the intended commands (Big Endian format)
-        size_t total_bits = read_bytes * 8;
-        bool* bit_array = new bool[total_bits];
+        //size_t total_bits = read_bytes * 8;
+        //bool* bit_array = new bool[total_bits];
         
-        for (size_t byte_ind = 0; byte_ind < read_bytes; byte_ind++) {
-            unsigned char byte = static_cast<unsigned char>(buffer[byte_ind]);
-            for (size_t b = 0; b < 8; b++) {
-                // mask Big Endian formated bytes
-                bit_array[b + 8 * byte_ind] = (byte & (0x01 << (7 - b))) == 1;
-            }
+        //for (size_t byte_ind = 0; byte_ind < read_bytes; byte_ind++) {
+        //    unsigned char byte = static_cast<unsigned char>(buffer[byte_ind]);
+        //    for (size_t b = 0; b < 8; b++) {
+        //        // mask Big Endian formated bytes
+        //        bit_array[b + 8 * byte_ind] = (byte & (0x01 << (7 - b))) == 1;
+        //    }
             
-        }
+        //}
         
-        return bit_array;
+        //return bit_array;
     }
 }
 
