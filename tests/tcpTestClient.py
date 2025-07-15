@@ -25,8 +25,7 @@ class TCPCommunication():
         self.s.connect((self.ip, self.port))
 
     def sendToServer(self, data):
-        self.s.send(data)
-        return self.s.recv(self.client_buff_size)
+        self.s.sendall(data)
 
     def closeClientConnection(self):
         self.s.close()

@@ -36,4 +36,6 @@ if __name__ == "__main__":
     communicator.openServer()
 
     while True:
-        print(communicator.readFromClient())
+        recv = communicator.readFromClient().decode('utf-8')
+        if len(recv) > 0:
+            print(communicator.readFromClient())
