@@ -35,4 +35,4 @@ if __name__ == "__main__":
     communicator.connectClient()
 
     sendData = b"this is a test"
-    print(communicator.sendToServer(sendData))
+    communicator.sendToServer(sendData)

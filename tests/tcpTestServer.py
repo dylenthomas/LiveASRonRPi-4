@@ -38,4 +38,4 @@ if __name__ == "__main__":
     while True:
         recv = communicator.readFromClient().decode('utf-8')
         if len(recv) > 0:
-            print(communicator.readFromClient())
+            print(recv)
