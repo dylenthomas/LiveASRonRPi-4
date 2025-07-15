@@ -1,5 +1,4 @@
 import RPi.GPIO as GPIO
-import socket
 
 from utils.LARS_utils import kwVectorHelper
 from ctypes import *
@@ -15,10 +14,10 @@ class BinaryAction:
         self.state = False # intialize to off
         self.on_voltage = on_voltage
 
-        if self.on_voltage == HIGH:
-            self.off_voltage = LOW
+        if self.on_voltage == GPIO.HIGH:
+            self.off_voltage = GPIO.LOW
         else:
-            self.off_voltage = HIGH
+            self.off_voltage = GPIO.HIGH
         
     def on(self):
         self.state = True
@@ -29,7 +28,7 @@ class BinaryAction:
     def off(self):
         self.state = False
 
-        for pin in self.pins
+        for pin in self.pins:
             GPIO.output(pin, self.off_voltage)
 
     def flip_state(self):
@@ -61,9 +60,9 @@ desk_lights_pin = 18
 GPIO.setup(overhead_lamp_pin, GPIO.OUT)
 GPIO.setup(desk_lights_pin, GPIO.OUT)
 
-overhead_lamp = BinaryAction((overhead_lamp_pin,), LOW)
-desk_lights = BinaryAction((desk_lights_pin,), LOW)
-all_lights = BinaryAction([desk_lights_pin, overhead_lamp_pin], LOW)
+overhead_lamp = BinaryAction((overhead_lamp_pin,), GPIO.LOW)
+desk_lights = BinaryAction((desk_lights_pin,), GPIO.LOW)
+all_lights = BinaryAction([desk_lights_pin, overhead_lamp_pin], GPIO.LOW)
 
 kw_helper = kwVectorHelper()
 kw_encodings = kw_helper.get_encodings()
