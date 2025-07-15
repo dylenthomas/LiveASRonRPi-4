@@ -26,7 +26,7 @@ class TCPCommunication():
 
     def sendToServer(self, data):
         self.s.send(data)
-        return s.recv(self.client_buff_size)
+        return self.s.recv(self.client_buff_size)
 
     def closeClientConnection(self):
         self.s.close()
@@ -35,5 +35,5 @@ if __name__ == "__main__":
     communicator = TCPCommunication()
     communicator.connectClient()
 
-    sendData = "this is a test"
-    communicator.sendToServer(sendData)
+    sendData = b"this is a test"
+    print(communicator.sendToServer(sendData))

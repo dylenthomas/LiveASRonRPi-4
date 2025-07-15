@@ -36,4 +36,4 @@ if __name__ == "__main__":
     communicator.openServer()
 
     while True:
-        print(readFromClient())
+        print(communicator.readFromClient())
