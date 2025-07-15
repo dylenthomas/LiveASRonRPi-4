@@ -9,7 +9,7 @@ import re
 
 from utils.faster_whisper import WhisperModel
 from utils.ML_utils import offlineWhisperProcessor, onnxWraper
-from utils.LARS_utils import kwVectorHelper
+from utils.LARS_utils import kwVectorHelper, TCPCommunication
 from ctypes import * 
 from concurrent.futures import ThreadPoolExecutor
 from nltk.tokenize import word_tokenize
@@ -29,23 +29,16 @@ vad_model = onnxWraper(".model/silero_vad_16k_op15.onnx", force_cpu=False)
 print("Starting Whisper...")
 model = WhisperModel("small", device=device, compute_type="float32")
 
+tcpCommunicator = TCPCommunication()
+
+
 #define c++ functions
 clib_mic = CDLL("utils/micModule.so")
-#clib_serial = CDLL("utils/serialModule.so")
 
 clib_mic.accessMicrophone.argtypes = [c_char_p, c_uint, c_int, c_int, c_int, POINTER(c_int), c_float]
 clib_mic.accessMicrophone.restype = POINTER(c_short)
 clib_mic.freeBuffer.argtypes = [POINTER(c_short)]
 clib_mic.freeBuffer.restype = None
-
-#clib_serial.openSerialPort.argtypes = [c_char_p]
-#clib_serial.openSerialPort.restype = c_int
-#clib_serial.configureSerialPort.argtypes = [c_int, c_int, c_int]
-#clib_serial.configureSerialPort.restype = c_bool
-#clib_serial.writeSerial.argtypes = [c_int, c_char_p, c_size_t]
-#clib_serial.writeSerial.restypes = c_int
-#clib_serial.closeSerial.argtypes = [c_int]
-#clib_serial.closeSerial.restypes = None
 
 """
 This script runs three threads:
@@ -124,19 +117,13 @@ thres = 0.7 # voice activity threshold
 energy_threshold = 0.001 # energy threshold to trigger prediction
 rel_thres = 0.15 # percent of chunks with VA to consider speech
 i = 0
-
-#serial_portname = b"/dev/tty"
-#serial_speed = 115200
-#expected_serial_bytes = 2
 ######
 
-if __name__ == "__main__":
-    #serial = clib_serial.openSerialPort(serial_portname)
-    #if serial == -1:
-    #    raise("There was an issue starting the serial port: {}".format(serial_portname))
-    #if not clib_serial.configureSerialPort(serial, serial_speed, expected_serial_bytes):
-    #    raise("There was an issue configuring the serial port")
-    
+if __name__ == "__main__":    
+    print("Waiting to connect to end device...")
+    tcpCommunicator.connectClient()
+    print("Connected to end device.")
+
     executor = ThreadPoolExecutor(max_workers=int(30/record_seconds)) # the most threads that would be needed
     kw_helper.setThreadManager(executor)
 
@@ -177,7 +164,7 @@ if __name__ == "__main__":
                 # this should be fine assuming a low number of commands will be requested at a time and false positive rates are very low
                 # then once a command packet is sent for this transcription chunk don't allow sending until the next chunk
                 if not commands_sent:
-                    kw_helper.addParsingThread(transcription)
+                    kw_helper.addParsingThread(transcription, tcpCommunicator)
                 
                 #t = threading.Thread(target=parse_prediction, args=(transcription,), daemon=True) # args expects an iterable
                 #t.start()

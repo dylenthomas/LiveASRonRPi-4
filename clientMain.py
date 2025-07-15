@@ -1,7 +1,6 @@
 import RPi.GPIO as GPIO
 
-from utils.LARS_utils import kwVectorHelper
-from ctypes import *
+from utils.LARS_utils import kwVectorHelper, TCPCommunication
 
 class BinaryAction:
     def __init__(self, on_voltage, pins):
@@ -37,22 +36,7 @@ class BinaryAction:
         
         self.state = not self.state
 
-# intialize c++ functions
-#clib_serial = CDLL("utils/serialModule.so")
-
-#clib_serial.openSerialPort.argtypes = [c_char_p]
-#clib_serial.openSerialPort.restype = c_int
-#clib_serial.configureSerialPort.argtypes = [c_int, c_int, c_int]
-#clib_serial.configureSerialPort.restype = c_bool
-#clib_serial.readSerial.argtypes = [c_int, c_size_t, POINTER(c_ssize_t)]
-#clib_serial.readSerial.restype = POINTER(c_bool)
-
 GPIO.setmode(GPIO.BOARD) # use physical board numbering
-
-#serial_portname = ""
-#serial_speed = 115200
-#expected_serial_bytes = 2
-#total_read = POINTER(c_ssize_t(0))
 
 overhead_lamp_pin = 15
 desk_lights_pin = 18
@@ -83,20 +67,19 @@ kw_to_action = {
 
 running = True
 
+tcpCommunicator = TCPCommunication()
+
 if __name__ == "__main__":
-    #serial = clib_serial.openSerialPort(serial_portname)
-    #if serial == -1:
-    #    raise("There was an issue starting the serial port: {}".format(serial_portname))
-    #if not clib_serial.configureSerialPort(serial, serial_speed, expected_serial_bytes):
-    #    raise("There was an issue configuring the serial port")
+    tcpCommunicator.openServer()
 
     try:
         while running:
-            #rec_packet = clib_serial.readSerial(serial, expected_serial_bytes, total_read)
-            #if not rec_packet:
-            #    print("There was an issue reading serial port")
-            #    continue
+            recv = tcpCommunicator.readFromClient()
+            if not recv: break
+            packet = recv.decode("utf-8")
 
+            if len(packet) == 0: continue
+            
             packet = packet.split(",")
             for i in packet:
                 keyword = kw_encodings[i]

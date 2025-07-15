@@ -1,4 +1,5 @@
 import numpy as np
+import sys
 
 from gensim.models import KeyedVectors
 from nltk.tokenize import word_tokenize
@@ -66,10 +67,10 @@ class kwVectorHelper():
     def setThreadManager(self, thread_executor):
         self.executor = thread_executor
 
-    def addParsingThread(self, transcription):
-        self.executor.submit(self.parse_prediction, transcription)
+    def addParsingThread(self, transcription, tcpCommunicator):
+        self.executor.submit(self.parse_premdiction, (transcription, tcpCommunicator))
 
-    def parse_prediction(self, transcription):
+    def parse_prediction(self, transcription, tcpCommunicator):
         """
         parse the transcript and use matrix/vector math to find words/pharases which are similar to the desired command keywords
         """ 
@@ -110,9 +111,9 @@ class kwVectorHelper():
                 found_kw = " ".join(transcription[ind:ind + (i + 1)]).lower()
                 found_keywords.append(self.encodings[found_kw])
 
-        self.send_commands(found_keywords)
+        self.send_commands(found_keywords, tcpCommunicator)
 
-    def send_commands(self, found_keywords):
+    def send_commands(self, found_keywords, tcpCommunicator):
         """
         Create a command packet with the keywords found in the transcription 
         The command packet is created with command encodings where the command is encoded as its index in the list
@@ -125,42 +126,81 @@ class kwVectorHelper():
         if len(packet) == 0: return # no keywords
         print(packet)
 
-        # send the data as a character array of bytes
-        #sent_bytes = clib_serial.writeSerial(serial, packet.encode('utf-8'), len(packet))
-
-        #if sent_bytes == -1:
-        #    print("There was error writing to serial.")
-        #else:
-        #    print("{} bytes where sent through serial".format(sent_bytes))
-        #    commands_sent = True
+        packet = packet.encode("utf-8")
+        tcpCommunicator.sendToServer(packet)
 
 class TCPCommunication():
     def __init__(self):
         self.ip = "100.72.193.15"
         self.port = 5000
-
         self.buff_size = 1024
 
     def openServer(self):
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.bind((self.ip, self.port))
-            s.listen(1)
+        maxConnections = 1
 
-            conn, addr = s.accept()
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            try:
+                s.bind((self.ip, self.port))
+                s.listen(maxConnections)
+            
+                conn, addr = s.accept()
+            except socket.error, msg:
+                sys.stderr.write("[TCP ERROR]: %s\n", msg[1])
+                sys.exit(1)
 
         self.conn = conn
         self.addr = addr
 
     def readFromClient(self):
-        return self.conn.recv(self.buff_size)
+        badMsg = -1
+        goodMsg = 1
+        attempts = 0
+        maxRetrys = 5
+        
+        while True:
+            recv = self.conn.recv(self.buff_size)
+            recv = recv.split("<")
+            
+            data = ""
+            for i in range(len(recv) - 1):
+                data = "".join(data, recv[i])
 
+            checkSum = recv[-1].replace(">", "")
+
+            if len(recv[-1]) == 0:
+                self.conn.sendall(badMsg)
+            elif checkSum != int([ord(a) for a in data]):
+                self.conn.sendall(badMsg)
+            elif attempts = maxRetrys:
+                self.conn.sendall(goodMsg)
+            else:
+                self.conn.sendall(goodMsg)
+                break
+                
+            attempts += 1
+            
     def connectClient(self):
-        self.s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.s.connect((self.ip, self.port))
+        try:
+            self.s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self.s.connect((self.ip, self.port))
+        except socket.error, msg:
+            sys.stderr.write("[TCP ERROR]: %s\n", msg[1])
+            sys.exit(2)
 
     def sendToServer(self, data):
+        badMsg = -1
+        goodMsg = 1
+        checkSum = sum([ord(c) for c in data])
+        data = data + "<" + str(checkSum) ">"
+
+        data = data.encode("utf-8")
         self.s.send(data)
-        return s.recv(self.client_buff_size)
+
+        while True:
+            if self.s.recv(self.buff_size) == badMsg:
+                self.s.send(data)
+            else:
+                break
 
     def closeClientConnection(self):
         self.s.close()
