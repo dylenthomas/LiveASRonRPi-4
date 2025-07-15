@@ -141,7 +141,7 @@ class TCPCommunication():
 
         self.buff_size = 1024
 
-    def connectServer(self):
+    def openServer(self):
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             s.bind((self.ip, self.port))
             s.listen(1)
