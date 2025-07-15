@@ -8,7 +8,8 @@ import nltk
 import re 
 
 from utils.faster_whisper import WhisperModel
-from utils.LARS_utils import offlineWhisperProcessor, onnxWraper, kwVectorHelper
+from utils.ML_utils import offlineWhisperProcessor, onnxWraper
+from utils.LARS_utils import kwVectorHelper
 from ctypes import * 
 from concurrent.futures import ThreadPoolExecutor
 from nltk.tokenize import word_tokenize
