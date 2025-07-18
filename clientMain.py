@@ -70,6 +70,7 @@ running = True
 tcpCommunicator = TCPCommunication()
 
 if __name__ == "__main__":
+    print("Starting tcp server...")
     tcpCommunicator.openServer()
 
     try:

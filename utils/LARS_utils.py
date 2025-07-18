@@ -139,6 +139,7 @@ class TCPCommunication():
     def openServer(self):
         maxConnections = 1
 
+        print("Waiting for connection...")
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             try:
                 s.bind((self.ip, self.port))
@@ -151,6 +152,7 @@ class TCPCommunication():
 
         self.conn = conn
         self.addr = addr
+        print("Found connection.")
 
     def readFromClient(self):
         badMsg = -1
