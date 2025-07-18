@@ -69,7 +69,7 @@ class kwVectorHelper():
         self.executor = thread_executor
 
     def addParsingThread(self, transcription, tcpCommunicator):
-        self.executor.submit(self.parse_premdiction, (transcription, tcpCommunicator))
+        self.executor.submit(self.parse_prediction, (transcription, tcpCommunicator))
 
     def parse_prediction(self, transcription, tcpCommunicator):
         """
@@ -162,6 +162,7 @@ class TCPCommunication():
         
         while True:
             recv = self.conn.recv(self.buff_size)
+            recv = str(recv)
             recv = recv.split("<")
             
             data = ""
