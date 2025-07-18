@@ -122,6 +122,7 @@ class kwVectorHelper():
         https://www.rapidtables.com/convert/number/hex-to-binary.html?x=03
         """
         packet = ''
+        print(found_keywords)
         for i in found_keywords:
             packet += str(i) + ',' # seperate each command by a comma
         if len(packet) == 0: return # no keywords
@@ -141,6 +142,7 @@ class TCPCommunication():
 
         print("Waiting for connection...")
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             try:
                 s.bind((self.ip, self.port))
                 s.listen(maxConnections)
