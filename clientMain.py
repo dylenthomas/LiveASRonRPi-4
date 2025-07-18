@@ -80,12 +80,13 @@ if __name__ == "__main__":
     try:
         while running:
             packet = tcpCommunicator.readFromClient()
-            print("Packet: ", packet)
+            print("Recieved packet: ", packet)
 
             if packet is None: continue
             
             packet = packet.split(",")
             for i in packet:
+                if i == '': continue # skip the empty entry at the end
                 keyword = kw_encodings[i]
                 kw_to_action[keyword]() # execute action
 
@@ -93,3 +94,4 @@ if __name__ == "__main__":
         print("\nStopping...")
         running = False
         tcpCommunicator.closeClientConnection()
+        GPIO.cleanup()
