@@ -1,5 +1,6 @@
 import numpy as np
 import sys
+import socket
 
 from gensim.models import KeyedVectors
 from nltk.tokenize import word_tokenize
@@ -144,8 +145,8 @@ class TCPCommunication():
                 s.listen(maxConnections)
             
                 conn, addr = s.accept()
-            except socket.error, msg:
-                sys.stderr.write("[TCP ERROR]: %s\n", msg[1])
+            except socket.error as msg:
+                print("[TCP ERROR]: {}".format(msg))
                 sys.exit(1)
 
         self.conn = conn
@@ -171,7 +172,7 @@ class TCPCommunication():
                 self.conn.sendall(badMsg)
             elif checkSum != int([ord(a) for a in data]):
                 self.conn.sendall(badMsg)
-            elif attempts = maxRetrys:
+            elif attempts == maxRetrys:
                 self.conn.sendall(goodMsg)
             else:
                 self.conn.sendall(goodMsg)
@@ -183,15 +184,15 @@ class TCPCommunication():
         try:
             self.s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             self.s.connect((self.ip, self.port))
-        except socket.error, msg:
-            sys.stderr.write("[TCP ERROR]: %s\n", msg[1])
+        except socket.error as msg:
+            print("[TCP ERROR]: {}".format(msg))
             sys.exit(2)
 
     def sendToServer(self, data):
         badMsg = -1
         goodMsg = 1
         checkSum = sum([ord(c) for c in data])
-        data = data + "<" + str(checkSum) ">"
+        data = data + "<" + str(checkSum) + ">"
 
         data = data.encode("utf-8")
         self.s.send(data)
