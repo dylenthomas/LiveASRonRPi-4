@@ -149,7 +149,18 @@ class TCPCommunication():
         print("Found connection.")
 
     def readFromClient(self):
-        return self.conn.recv(self.buff_size)
+        data = self.conn.recv(self.buff_size).decode("utf-8")
+        # process checksum
+        print(data)
+        data = data.split("<|")
+        print(data)
+        checkSum = data[1].replace("|>", "")
+        recvCheckSum = sum(data[0].encode("utf-8"))
+        
+        if recvCheckSum == checkSum:
+            return data[0]
+        else:
+            return None
             
     def connectClient(self):
         try:
@@ -160,8 +171,8 @@ class TCPCommunication():
             sys.exit(2)
 
     def sendToServer(self, data):
-        checkSum = sum([ord(a) for a in data])
-        data = data + "<" + str(checkSum) + ">"
+        checkSum = sum(data.encode("utf-8"))
+        data = data + "<|" + str(checkSum) + "|>"
 
         data = data.encode("utf-8")
         if not self.command_sent:
