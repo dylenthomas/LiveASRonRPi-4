@@ -65,12 +65,6 @@ class kwVectorHelper():
 
         return transcrpt_vecs
 
-    def setThreadManager(self, thread_executor):
-        self.executor = thread_executor
-
-    def addParsingThread(self, transcription, tcpCommunicator):
-        self.executor.submit(self.parse_prediction, (transcription, tcpCommunicator))
-
     def parse_prediction(self, transcription, tcpCommunicator):
         """
         parse the transcript and use matrix/vector math to find words/pharases which are similar to the desired command keywords
@@ -111,6 +105,8 @@ class kwVectorHelper():
             for ind in passing_inds:
                 found_kw = " ".join(transcription[ind:ind + (i + 1)]).lower()
                 found_keywords.append(self.encodings[found_kw])
+
+        print(found_keywords)
 
         self.send_commands(found_keywords, tcpCommunicator)
 
@@ -168,19 +164,11 @@ class TCPCommunication():
             sys.exit(2)
 
     def sendToServer(self, data):
-        badMsg = -1
-        goodMsg = 1
-        checkSum = sum([ord(c) for c in data])
+        checkSum = sum(data)
         data = data + "<" + str(checkSum) + ">"
 
         data = data.encode("utf-8")
         self.s.send(data)
-
-        while True:
-            if self.s.recv(self.buff_size) == badMsg:
-                self.s.send(data)
-            else:
-                break
 
     def closeClientConnection(self):
         self.s.close()

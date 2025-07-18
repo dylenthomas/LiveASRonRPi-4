@@ -73,9 +73,9 @@ def prediction(prediction_que, i = 0):
     segments = model.transcribe(features, beam_size=5, language="en")
 
     # Move cursor up by the number of segments (or clear screen if first run)
-    if i == 0: # clear the screen if first run and move cursor to top left
-        print("\033[2J \033[H")
-    print('\033[F' * i, end='', flush=True)
+    #if i == 0: # clear the screen if first run and move cursor to top left
+    #    print("\033[2J \033[H")
+    #print('\033[F' * i, end='', flush=True)
     i = 0
     for segment in segments:
         print("[%.2fs -> %.2fs] \t%s" % (segment.start, segment.end, segment.text))
@@ -125,7 +125,6 @@ if __name__ == "__main__":
     print("Connected to end device.")
 
     executor = ThreadPoolExecutor(max_workers=int(30/record_seconds)) # the most threads that would be needed
-    kw_helper.setThreadManager(executor)
 
     audio_thread1 = threading.Thread(target=audio_loop, daemon=True)
     audio_thread1.start()
@@ -163,15 +162,15 @@ if __name__ == "__main__":
                 # run a thread to parse the prediciton each time the transcript is re made so that as soon as it detects a command after n runs it immediatley gets it
                 # this should be fine assuming a low number of commands will be requested at a time and false positive rates are very low
                 # then once a command packet is sent for this transcription chunk don't allow sending until the next chunk
+                print(commands_sent)
                 if not commands_sent:
-                    kw_helper.addParsingThread(transcription, tcpCommunicator)
+                    #executor.submit(kw_helper.parse_prediction, (transcription, tcpCommunicator))
                 
-                #t = threading.Thread(target=parse_prediction, args=(transcription,), daemon=True) # args expects an iterable
-                #t.start()
+                    t = threading.Thread(target=kw_helper.parse_prediction, args=(transcription, tcpCommunicator), daemon=True) # args expects an iterable
+                    t.start()
 
     except KeyboardInterrupt:
         print("\nStopping...")
         running = False
         executor.shutdown(wait=True)
         audio_thread1.join()
-        #clib_serial.closeSerial(serial)
