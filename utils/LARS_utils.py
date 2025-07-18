@@ -106,8 +106,6 @@ class kwVectorHelper():
                 found_kw = " ".join(transcription[ind:ind + (i + 1)]).lower()
                 found_keywords.append(self.encodings[found_kw])
 
-        print(found_keywords)
-
         self.send_commands(found_keywords, tcpCommunicator)
 
     def send_commands(self, found_keywords, tcpCommunicator):
@@ -118,13 +116,10 @@ class kwVectorHelper():
         https://www.rapidtables.com/convert/number/hex-to-binary.html?x=03
         """
         packet = ''
-        print(found_keywords)
         for i in found_keywords:
             packet += str(i) + ',' # seperate each command by a comma
         if len(packet) == 0: return # no keywords
-        print(packet)
 
-        packet = packet.encode("utf-8")
         tcpCommunicator.sendToServer(packet)
 
 class TCPCommunication():
@@ -132,6 +127,7 @@ class TCPCommunication():
         self.ip = "100.72.193.15"
         self.port = 5000
         self.buff_size = 1024
+        self.command_sent = False
 
     def openServer(self):
         maxConnections = 1
@@ -164,11 +160,13 @@ class TCPCommunication():
             sys.exit(2)
 
     def sendToServer(self, data):
-        checkSum = sum(data)
+        checkSum = sum([ord(a) for a in data])
         data = data + "<" + str(checkSum) + ">"
 
         data = data.encode("utf-8")
-        self.s.send(data)
+        if not self.command_sent:
+            self.s.send(data)
+            self.command_sent = True
 
     def closeClientConnection(self):
         self.s.close()

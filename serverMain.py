@@ -98,7 +98,6 @@ def save_audio(audio):
 
 ### SET VARIABLES ###
 running = True
-commands_sent = False
 
 sample_count = c_int()
 mic_name = b"plughw:CARD=Snowball"
@@ -156,14 +155,13 @@ if __name__ == "__main__":
                     i = 0
                     clear_que = False
                     # reset the variable stopping serial communication
-                    commands_sent = False
+                    tcpCommunicator.command_sent = False
 
                 # send the prediction off to be parsed for keywords in another thread
                 # run a thread to parse the prediciton each time the transcript is re made so that as soon as it detects a command after n runs it immediatley gets it
                 # this should be fine assuming a low number of commands will be requested at a time and false positive rates are very low
                 # then once a command packet is sent for this transcription chunk don't allow sending until the next chunk
-                print(commands_sent)
-                if not commands_sent:
+                if not tcpCommunicator.command_sent:
                     #executor.submit(kw_helper.parse_prediction, (transcription, tcpCommunicator))
                 
                     t = threading.Thread(target=kw_helper.parse_prediction, args=(transcription, tcpCommunicator), daemon=True) # args expects an iterable
