@@ -150,11 +150,9 @@ class TCPCommunication():
 
     def readFromClient(self):
         data = self.conn.recv(self.buff_size).decode("utf-8")
-        # process checksum
-        print(data)
+        # extract and process checksum
         data = data.split("<|")
-        print(data)
-        checkSum = data[1].replace("|>", "")
+        checkSum = int(data[1].replace("|>", ""))
         recvCheckSum = sum(data[0].encode("utf-8"))
         
         if recvCheckSum == checkSum:
