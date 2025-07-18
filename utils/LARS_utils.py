@@ -142,7 +142,7 @@ class TCPCommunication():
 
         print("Waiting for connection...")
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1) # prevent address already in use error
             try:
                 s.bind((self.ip, self.port))
                 s.listen(maxConnections)
