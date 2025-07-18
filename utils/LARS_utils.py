@@ -155,33 +155,7 @@ class TCPCommunication():
         print("Found connection.")
 
     def readFromClient(self):
-        badMsg = -1
-        goodMsg = 1
-        attempts = 0
-        maxRetrys = 5
-        
-        while True:
-            recv = self.conn.recv(self.buff_size)
-            recv = str(recv)
-            recv = recv.split("<")
-            
-            data = ""
-            for i in range(len(recv) - 1):
-                data = "".join(data, recv[i])
-
-            checkSum = recv[-1].replace(">", "")
-
-            if len(recv[-1]) == 0:
-                self.conn.sendall(badMsg)
-            elif checkSum != int([ord(a) for a in data]):
-                self.conn.sendall(badMsg)
-            elif attempts == maxRetrys:
-                self.conn.sendall(goodMsg)
-            else:
-                self.conn.sendall(goodMsg)
-                break
-                
-            attempts += 1
+        return self.conn.recv(self.buff_size)
             
     def connectClient(self):
         try:

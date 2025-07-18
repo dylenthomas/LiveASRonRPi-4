@@ -75,9 +75,8 @@ if __name__ == "__main__":
 
     try:
         while running:
-            recv = tcpCommunicator.readFromClient()
-            if not recv: break
-            packet = recv.decode("utf-8")
+            packet = tcpCommunicator.readFromClient().decode("utf-8")
+            print(packet)
 
             if len(packet) == 0: continue
             
