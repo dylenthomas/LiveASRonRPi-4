@@ -14,6 +14,7 @@ from ctypes import *
 from concurrent.futures import ThreadPoolExecutor
 from nltk.tokenize import word_tokenize
 
+### setup relevant helper classes ------------------------------------------------------------------
 device = "cuda" if torch.cuda.is_available() else "cpu"
 print("Using device: {}".format(device))
 
@@ -28,17 +29,17 @@ print("Starting VAD model...")
 vad_model = onnxWraper(".model/silero_vad_16k_op15.onnx", force_cpu=False)
 print("Starting Whisper...")
 model = WhisperModel("small", device=device, compute_type="float32")
-
 tcpCommunicator = TCPCommunication()
+### -------------------------------------------------------------------------------------------------
 
-
-#define c++ functions
+### define c++ functions ----------------------------------------------------------------------------
 clib_mic = CDLL("utils/micModule.so")
 
 clib_mic.accessMicrophone.argtypes = [c_char_p, c_uint, c_int, c_int, c_int, POINTER(c_int), c_float]
 clib_mic.accessMicrophone.restype = POINTER(c_short)
 clib_mic.freeBuffer.argtypes = [POINTER(c_short)]
 clib_mic.freeBuffer.restype = None
+### -------------------------------------------------------------------------------------------------
 
 """
 This script runs three threads:
@@ -49,19 +50,22 @@ This script runs three threads:
 """
 
 def audio_loop():
-    """
-    audio collection loop to collect and store 2 audio buffers
-        collected_seconds - the number of seconds of audio to collect from the microphone
-    """
     print("Starting audio collection...")
     
     while running:
-        ptr = clib_mic.accessMicrophone(mic_name, sample_rate, channels, buffer_frames, int(record_seconds), byref(sample_count), a)
-        buffer = np.ctypeslib.as_array(ptr, shape=(sample_count.value,))
-        buffer = buffer.astype(np.float32) / 32768.0 # convert to float32
-        clib_mic.freeBuffer(ptr)
+        ptr1 = clib_mic.accessMicrophone(mic_name1, sample_rate, channels, buffer_frames, int(record_seconds), byref(sample_count1), runningAvgCoef)
+        ptr2 = clib_mic.accessMicrophone(mic_name2, sample_rate, channels, buffer_frames, int(record_seconds), byref(sample_count2), runningAvgCoef)
 
-        buffer_que.append(buffer)
+        buffer1 = np.ctypeslib.as_array(ptr1, shape=(sample_count1.value,))
+        buffer1 = buffer1.astype(np.float32) / 32768.0 # convert to float32
+        clib_mic.freeBuffer(ptr1)
+
+        buffer2 = np.ctypeslib.as_array(ptr2, shape=(sample_count2.value,))
+        buffer2 = buffer2.astype(np.float32) / 327680.0 #convert to float32
+        clib_mic.freeBuffer(ptr2)
+
+        buffer_que[0].append(buffer1)
+        buffer_que[1].append(buffer2)
 
 def prediction(prediction_que, i = 0):
     transcription = []
@@ -72,18 +76,12 @@ def prediction(prediction_que, i = 0):
     features = features.cpu()
     segments = model.transcribe(features, beam_size=5, language="en")
 
-    # Move cursor up by the number of segments (or clear screen if first run)
-    #if i == 0: # clear the screen if first run and move cursor to top left
-    #    print("\033[2J \033[H")
-    #print('\033[F' * i, end='', flush=True)
-    i = 0
     for segment in segments:
         print("[%.2fs -> %.2fs] \t%s" % (segment.start, segment.end, segment.text))
         cleaned_text = re.sub(r'[^\w\s]', '', segment.text) # remove all non characters and whitespace
         transcription.append(cleaned_text)
-        i += 1
 
-    return i, transcription
+    return transcription
 
 def save_audio(audio):
     window = np.concatenate(audio)
@@ -96,34 +94,38 @@ def save_audio(audio):
     wav.writeframes(window)
     wav.close()
 
-### SET VARIABLES ###
+### SET VARIABLES -------------------------------------------------------------------------
 running = True
 
-sample_count = c_int()
-mic_name = b"plughw:CARD=Snowball"
+sample_count1 = c_int()
+sample_count2 = c_int()
+mic_name1 = b"plughw:CARD=Snowball"
+mic_name2 = b"plughw:CARD="
 sample_rate = 16000
 channels = 1
 buffer_frames = 1024
 record_seconds = 1.0
-a = 0.25 # the coefficient for running average
+runningAvgCoef = 0.25
 
-buffer = np.zeros(int(record_seconds * sample_rate), dtype=np.float32)
-buffer_que = [] # create a list to store if there is a buffer that needs to be analyzed
+longestWhisperBuffer = 30           # max seconds of audio whisper can predict on
 
-prediction_que = [] # store buffers to be predicted on in a list (queue)
+buffer1 = np.zeros(int(record_seconds * sample_rate), dtype=np.float32)
+buffer2 = np.zeros(int(record_seconds * sample_rate), dtype=np.float32)
+buffer_que = [[], []]
+
+prediction_que = []                 # store buffers to be predicted on in a list (queue)
 clear_que = False
-thres = 0.7 # voice activity threshold
-energy_threshold = 0.001 # energy threshold to trigger prediction
-rel_thres = 0.15 # percent of chunks with VA to consider speech
-i = 0
-######
+thres = 0.7                         # voice activity threshold
+energy_threshold = 0.001            # energy threshold to trigger prediction
+rel_thres = 0.15                    # percent of chunks with VA to consider speech
+### ----------------------------------------------------------------------------------------
 
 if __name__ == "__main__":    
     print("Waiting to connect to end device...")
     tcpCommunicator.connectClient()
     print("Connected to end device.")
 
-    executor = ThreadPoolExecutor(max_workers=int(30/record_seconds)) # the most threads that would be needed
+    executor = ThreadPoolExecutor(max_workers=int(longestWhisperBuffer/record_seconds)) # the most threads that would be needed
 
     audio_thread1 = threading.Thread(target=audio_loop, daemon=True)
     audio_thread1.start()
@@ -131,44 +133,60 @@ if __name__ == "__main__":
     try:
         while running:
             # check buffer for voice activity
-            if len(buffer_que) > 0:
-                vad_pred = vad_model(torch.from_numpy(buffer_que[0]))
+            # predict on the buffer with the highest voice activity
+
+            most_speech_chunks = 0
+            most_audio_energy = 0
+            best_mic_index = None
+
+            for mic in len(buffer_que):
+                buffer = buffer_que[mic][0]
+                vad_pred = vad_model(torch.from_numpy(buffer))
                 num_speech_chunks = torch.sum((vad_pred > thres).int()).item()
+
                 rel_speech_chunks = num_speech_chunks / vad_pred.shape[0]
-                audio_energy = torch.mean(torch.abs(torch.from_numpy(buffer_que[0])))
+                audio_energy = torch.mean(torch.abs(torch.from_numpy(buffer)))
 
-                if rel_speech_chunks > rel_thres and len(prediction_que) < int(30 / record_seconds) and audio_energy > energy_threshold:
-                    prediction_que.append(buffer_que[0])
+                if rel_speech_chunks > most_speech_chunks and audio_energy > most_audio_energy:
+                    most_speech_chunks = rel_speech_chunks
+                    most_audio_energy = audio_energy
+                    best_mic_index = mic
 
-                elif len(prediction_que) > 0:
-                    # no speech detected or there is no room left in the que
-                    # if there is something in the que mark it for clearing and preform one last prediction
-                    clear_que = True
+            if most_speech_chunks > rel_thres and len(prediction_que) < int(longestWhisperBuffer / record_seconds) and most_audio_energy > energy_threshold:
+                prediction_que.append(buffer_que[best_mic_index][0])
+            elif len(prediction_que) > 0:
+                # no speech detected or there is no room left in the que
+                # if there is something in the que mark it for clearing and preform one last prediction
+                clear_que = True
 
-                del buffer_que[0]
+            # clear the buffers
+            for mic in len(buffer_que):
+                del buffer_que[mic][0]
 
             if len(prediction_que) > 0:
-                i, transcription = prediction(prediction_que, i)
+                transcription = prediction(prediction_que)
 
                 if clear_que:
-                    prediction_que[:] = [] # clear the prediction que
+                    # clear the prediction que
+                    prediction_que[:] = []
                     i = 0
                     clear_que = False
-                    # reset the variable stopping serial communication
+                    # reset the variable stopping tcp communication
                     tcpCommunicator.command_sent = False
 
                 # send the prediction off to be parsed for keywords in another thread
-                # run a thread to parse the prediciton each time the transcript is re made so that as soon as it detects a command after n runs it immediatley gets it
-                # this should be fine assuming a low number of commands will be requested at a time and false positive rates are very low
-                # then once a command packet is sent for this transcription chunk don't allow sending until the next chunk
+                # run a thread to parse the prediciton each time the transcript is re made so that as soon as a command is detected after n runs it will immediately be sent
                 if not tcpCommunicator.command_sent:
-                    #executor.submit(kw_helper.parse_prediction, (transcription, tcpCommunicator))
+                    DEBUG = False # if you want to see errors in the threads set to true so the regular threading class is used. 
+                    if DEBUG:
+                        t = threading.Thread(target=kw_helper.parse_prediction, args=(transcription, tcpCommunicator), daemon=True) # args expects an iterable
+                        t.start()
+                    else:
+                        executor.submit(kw_helper.parse_prediction, (transcription, tcpCommunicator))
                 
-                    t = threading.Thread(target=kw_helper.parse_prediction, args=(transcription, tcpCommunicator), daemon=True) # args expects an iterable
-                    t.start()
-
     except KeyboardInterrupt:
         print("\nStopping...")
         running = False
         executor.shutdown(wait=True)
         audio_thread1.join()
+        tcpCommunicator.closeClientConnection()
