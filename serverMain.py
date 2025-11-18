@@ -3,16 +3,14 @@ import os
 import wave
 import torch
 import threading
-import gensim
-import nltk
 import re 
 
 from utils.faster_whisper import WhisperModel
 from utils.ML_utils import offlineWhisperProcessor, onnxWraper
-from utils.LARS_utils import kwVectorHelper, TCPCommunication
+from utils.LARS_utils import TCPCommunication
 from ctypes import * 
-from concurrent.futures import ThreadPoolExecutor
-from nltk.tokenize import word_tokenize
+from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
+from sentence_transformers import SentenceTransformer, util
 
 ### setup relevant helper classes ------------------------------------------------------------------
 device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -23,8 +21,9 @@ processor = offlineWhisperProcessor(config_path="utils/configs/preprocessor_conf
                                     special_tokens_path="utils/configs/tokenizer_config.json",
                                     vocab_path="utils/configs/vocab.json", device=device
                                     )
-print("Creating Vectors for commands..")
-kw_helper = kwVectorHelper(device, similarity_threshold=0.8)
+print("Starting sentence transformer...")
+word_vector_generator = SentenceTransformer("all-MiniLM-L6-v2")
+word_vector_generator.to(device)
 print("Starting VAD model...")
 vad_model = onnxWraper(".model/silero_vad_16k_op15.onnx", force_cpu=False)
 print("Starting Whisper...")
@@ -40,14 +39,6 @@ clib_mic.accessMicrophone.restype = POINTER(c_short)
 clib_mic.freeBuffer.argtypes = [POINTER(c_short)]
 clib_mic.freeBuffer.restype = None
 ### -------------------------------------------------------------------------------------------------
-
-"""
-This script runs three threads:
-    thread 1 (main): analyzing audio for voice activation and running predcition 
-    thread 2 (audio): collecting and storing audio buffers
-    thread 3 (ui): a ui running on the server so I can see a live transcription and other information
-    threads 4+ (pi communication): parsing transcripts and sening commands to end device
-"""
 
 def audio_loop():
     print("Starting audio collection...")
@@ -83,6 +74,33 @@ def prediction(prediction_que):
         transcription.append(cleaned_text)
 
     return transcription
+
+def parse_transcript(transcript):
+    transcript = [" ".join(transcript)]
+    transcript_embedding = word_vector_generator.encode(transcript)
+
+    max_similarity = 0.0
+    max_similarity_ind = (0, 0)
+
+    for i in range(len(keyword_embeddings)):
+        kw_matrix = keyword_embeddings[i]
+
+        similarities = util.cos_sim(transcript_embedding, kw_matrix)
+        most_similar = torch.argmax(similarities)
+            
+        if similarities[0, most_similar] > max_similarity:
+            max_similarity = similarities[0, most_similar]
+            max_similarity_ind = (i, most_similar.item())
+
+    if max_similarity > vector_similarity_thres:
+        most_similar_keyword_type = keywords[max_similarity_ind[0]]
+        most_similar_keyword = most_similar_keyword_type[max_similarity_ind[1]]
+            
+        packet = f'{most_similar_keyword},'
+        print("Sending: ", packet)
+        tcpCommunicator.sendToServer(packet)
+
+        print("Sent.")
 
 def save_audio(audio):
     window = np.concatenate(audio)
@@ -123,6 +141,13 @@ prediction_que = []
 clear_prediction_que = False
 thres = 0.5                         # voice activity threshold
 percent_thres = 0.05                # percent of chunks with VA to consider speech
+
+ONE = ["lights", "mute", "unmute"]
+TWO = ["lights on", "lights off", "volume down", "volume up"]
+THREE = ["overhead lamp off","overhead lamp on", "desk lights off", "desk lights on", "set aux audio", "set phono audio"]
+keywords = [THREE, TWO, ONE]
+keyword_embeddings = [word_vector_generator.encode(keyword_group) for keyword_group in keywords]
+vector_similarity_thres = 0.8
 ### ----------------------------------------------------------------------------------------
 
 if __name__ == "__main__":    
@@ -130,10 +155,10 @@ if __name__ == "__main__":
     tcpCommunicator.connectClient()
     print("Connected to end device.")
 
-    executor = ThreadPoolExecutor(max_workers=int(longestWhisperBuffer/record_seconds)) # the most threads that would be needed
+    executor = ThreadPoolExecutor(max_workers=int(longestWhisperBuffer/record_seconds))
 
-    audio_thread1 = threading.Thread(target=audio_loop, daemon=True)
-    audio_thread1.start()
+    audio_thread = threading.Thread(target=audio_loop)
+    audio_thread.start()
 
     try:
         while running:
@@ -160,7 +185,6 @@ if __name__ == "__main__":
 
             if reached_speech_threshold and room_in_que:
                 prediction_que.append(combined_buffer)
-
             else:
                 clear_prediction_que = True
 
@@ -168,24 +192,24 @@ if __name__ == "__main__":
             del mics[1][0]
 
             if len(prediction_que) > 0:
-                transcription = prediction(prediction_que)
+                transcript = prediction(prediction_que)
 
                 if not tcpCommunicator.command_sent:
-                    DEBUG = True # if you want to see errors in the threads set to true so the regular threading class is used. 
+                    DEBUG = False # if you want to see errors in the threads set to true so the regular threading class is used. 
                     if DEBUG:
-                        t = threading.Thread(target=kw_helper.parse_prediction, args=(transcription, tcpCommunicator), daemon=True)
+                        t = threading.Thread(target=parse_transcript, args=(transcript,), daemon=True)
                         t.start()
                     else:
-                        executor.submit(kw_helper.parse_prediction, (transcription, tcpCommunicator))
-                else:
-                    reset_que()
+                        executor.submit(parse_transcript, transcript)
 
-                if clear_prediction_que:
+                    if clear_prediction_que:
+                        reset_que()
+                else:
                     reset_que()
                 
     except KeyboardInterrupt:
         print("\nStopping...")
         running = False
-        executor.shutdown(wait=True)
-        audio_thread1.join()
+        executor.shutdown(cancel_futures=True)
+        audio_thread.join()
         tcpCommunicator.closeClientConnection()
