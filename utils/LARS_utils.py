@@ -1,12 +1,12 @@
 import numpy as np
 import sys
 import socket
+import torch
 
-from gensim.models import KeyedVectors
-from nltk.tokenize import word_tokenize
+from sentence_transformers import SentenceTransformer, util
 
 class kwVectorHelper():
-    def __init__(self):
+    def __init__(self, device, similarity_threshold):
         ONE = ["lights",
             "mute",
             "unmute"]
@@ -20,93 +20,39 @@ class kwVectorHelper():
                 "desk lights on",
                 "set aux audio",
                 "set phono audio"]
+        self.keywords = [THREE, TWO, ONE]
 
-        TWO= [word_tokenize(kw) for kw in TWO]
-        THREE = [word_tokenize(kw) for kw in THREE]
+        self.vector_model = SentenceTransformer("all-MiniLM-L6-v2")
+        self.vector_model.to(device)
+        self.keyword_embeddings = [self.vector_model.encode(THREE), self.vector_model.encode(TWO), self.vector_model.encode(ONE)]
 
-        #self.vector_model = gensim.downloader.load("glove-wiki-gigaword-100")
-        self.vector_model = KeyedVectors.load("/home/dylenthomas/LiveASRonRPi-4/.model/LARS.wordvectors")
-        self.vecs = [THREE, TWO, ONE] # check from longest to shortest to avoid scenarios where a shorter keyword that lies in a longer one is identified as the indended keyword
-        self.encodings = {}
-
-        kw_ind = 0
-        for i, kw_list in enumerate(self.vecs):
-            db = []
-            for kw in kw_list:
-                if i == len(self.vecs) - 1: # one word keywords
-                    db.append(self.vector_model[kw])
-                    kw = [kw] # to prevent running .join on a string instead of a list below
-                else:
-                    db.append(np.concatenate(self.vector_model[kw]))
-
-                # encode keywords as indexes
-                self.encodings[" ".join(kw)] = kw_ind
-                kw_ind += 1
-
-            self.vecs[i] = np.array(db).transpose()
-
-    def get_encodings(self):
-        return self.encodings
-
-    def transcript2mat(self, transcription):
-        transcrpt_vecs = []
-        for i in range(len(self.vecs)):
-            i = len(self.vecs) - i # count down from longest to shortest to match the keyword formatting
-
-            vec = []
-            for w in range(len(transcription) - (i - 1)):
-                words = [word.lower() for word in transcription[w : w + i]] # make everything lower case
-                if i == 1:
-                    vec.append(self.vector_model[words[0]])
-                else:
-                    vec.append(np.concatenate(self.vector_model[words]))
-            vec = np.array(vec)
-            transcrpt_vecs.append(vec)
-
-        return transcrpt_vecs
+        self.similarity_threshold = similarity_threshold
 
     def parse_prediction(self, transcription, tcpCommunicator):
         """
         parse the transcript and use matrix/vector math to find words/pharases which are similar to the desired command keywords
         """ 
-        similarity_threshold = 0.8
 
-        transcription = " ".join(transcription)
-        transcription = word_tokenize(transcription)
+        transcription = [" ".join(transcription)]
+        transcript_embedding = self.vector_model.encode(transcription)
 
-        # make a list of lists to get multiple word chunks that line up with the comand keyword vectors
-        transcrpt_vecs = self.transcript2mat(transcription)
+        max_similarity = 0.0
+        max_similarity_ind = (0, 0)
 
-        # calculate the cosine similarity between the transcription and each keyword 
-        # the matrix created will give the cosine similarity between each transcription and keyword, where
-        #   a row is the similarity between a given chunk of the transcript and each keyword 
-        found_keywords = []
-        for i, kw_matrix in enumerate(self.vecs):
-            t_vec = transcrpt_vecs[i]
+        for i in range(len(self.keyword_embeddings)):
+            kw_matrix = self.keyword_embeddings[i]
 
-            # if there is a transcript shorter than some keywords there wont be a vector for it, so skip that length
-            if len(t_vec) == 0: continue
-            # if we get to one word keywords, but the transcript is longer than one word assume there is no intended keyword present
-            if i == 2 and len(transcription) > 1: continue
+            similarities = util.cos_sim(transcript_embedding, kw_matrix)
+            most_similar = torch.argmax(similarities)
             
-            dot_prod = np.matmul(t_vec, kw_matrix) # get the dot product for each row and col
+            if similarities[0, most_similar] > max_similarity:
+                max_similarity = similarities[0, most_similar]
+                max_similarity_ind = (i, most_similar.item())
 
-            t_norms = np.linalg.norm(t_vec, axis=1, keepdims=True)
-            kw_norms = np.linalg.norm(kw_matrix, axis=0, keepdims=True)
-
-            dot_prod = dot_prod / (t_norms * kw_norms)
-            most_similar = np.argmax(dot_prod, axis=1) # find the index of the highest cosine similarity
-
-            rows = np.arange(dot_prod.shape[0]) # make a vector to index each row
-            passing_scores = dot_prod[rows, most_similar] > similarity_threshold
-            if not np.any(passing_scores): continue # no found keywords 
-            
-            passing_inds = most_similar[passing_scores].tolist()
-            for ind in passing_inds:
-                found_kw = " ".join(transcription[ind:ind + (i + 1)]).lower()
-                found_keywords.append(self.encodings[found_kw])
-
-        self.send_commands(found_keywords, tcpCommunicator)
+        if max_similarity > self.similarity_threshold:
+            most_similar_keyword_type = self.keywords[max_similarity_ind[0]]
+            most_similar_keyword = most_similar_keyword_type[max_similarity_ind[1]]
+            self.send_commands([most_similar_keyword], tcpCommunicator)
 
     def send_commands(self, found_keywords, tcpCommunicator):
         """
@@ -118,6 +64,7 @@ class kwVectorHelper():
         packet = ''
         for i in found_keywords:
             packet += str(i) + ',' # seperate each command by a comma
+            print("Sent: ", packet)
         if len(packet) == 0: return # no keywords
 
         tcpCommunicator.sendToServer(packet)

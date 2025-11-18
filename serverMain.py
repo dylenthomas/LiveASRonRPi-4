@@ -24,7 +24,7 @@ processor = offlineWhisperProcessor(config_path="utils/configs/preprocessor_conf
                                     vocab_path="utils/configs/vocab.json", device=device
                                     )
 print("Creating Vectors for commands..")
-kw_helper = kwVectorHelper()
+kw_helper = kwVectorHelper(device, similarity_threshold=0.8)
 print("Starting VAD model...")
 vad_model = onnxWraper(".model/silero_vad_16k_op15.onnx", force_cpu=False)
 print("Starting Whisper...")
@@ -54,20 +54,21 @@ def audio_loop():
     
     while running:
         ptr1 = clib_mic.accessMicrophone(mic_name1, sample_rate, channels, buffer_frames, int(record_seconds), byref(sample_count1), runningAvgCoef)
-        ptr2 = clib_mic.accessMicrophone(mic_name2, sample_rate, channels, buffer_frames, int(record_seconds), byref(sample_count2), runningAvgCoef)
+        #ptr2 = clib_mic.accessMicrophone(mic_name2, sample_rate, channels, buffer_frames, int(record_seconds), byref(sample_count2), runningAvgCoef)
 
         buffer1 = np.ctypeslib.as_array(ptr1, shape=(sample_count1.value,))
         buffer1 = buffer1.astype(np.float32) / 32768.0 # convert to float32
         clib_mic.freeBuffer(ptr1)
 
-        buffer2 = np.ctypeslib.as_array(ptr2, shape=(sample_count2.value,))
-        buffer2 = buffer2.astype(np.float32) / 327680.0 #convert to float32
-        clib_mic.freeBuffer(ptr2)
+        #buffer2 = np.ctypeslib.as_array(ptr2, shape=(sample_count2.value,))
+        #buffer2 = buffer2.astype(np.float32) / 327680.0 #convert to float32
+        #clib_mic.freeBuffer(ptr2)
 
-        buffer_que[0].append(buffer1)
-        buffer_que[1].append(buffer2)
+        mics[0].append(buffer1)
+        mics[1].append(buffer1)
+        #mics[1].append(buffer2)
 
-def prediction(prediction_que, i = 0):
+def prediction(prediction_que):
     transcription = []
     
     pred_array = np.concatenate(prediction_que)
@@ -77,8 +78,8 @@ def prediction(prediction_que, i = 0):
     segments = model.transcribe(features, beam_size=5, language="en")
 
     for segment in segments:
-        print("[%.2fs -> %.2fs] \t%s" % (segment.start, segment.end, segment.text))
         cleaned_text = re.sub(r'[^\w\s]', '', segment.text) # remove all non characters and whitespace
+        print("[%.2fs -> %.2fs] \t%s" % (segment.start, segment.end, cleaned_text))
         transcription.append(cleaned_text)
 
     return transcription
@@ -93,6 +94,11 @@ def save_audio(audio):
     wav.setframerate(16000)
     wav.writeframes(window)
     wav.close()
+
+def reset_que():
+    prediction_que[:] = []
+    tcpCommunicator.command_sent = False
+    clear_prediction_que = False
 
 ### SET VARIABLES -------------------------------------------------------------------------
 running = True
@@ -111,13 +117,12 @@ longestWhisperBuffer = 30           # max seconds of audio whisper can predict o
 
 buffer1 = np.zeros(int(record_seconds * sample_rate), dtype=np.float32)
 buffer2 = np.zeros(int(record_seconds * sample_rate), dtype=np.float32)
-buffer_que = [[], []]
+mics = [[], []]
 
-prediction_que = []                 # store buffers to be predicted on in a list (queue)
-clear_que = False
-thres = 0.7                         # voice activity threshold
-energy_threshold = 0.001            # energy threshold to trigger prediction
-rel_thres = 0.15                    # percent of chunks with VA to consider speech
+prediction_que = []
+clear_prediction_que = False
+thres = 0.5                         # voice activity threshold
+percent_thres = 0.05                # percent of chunks with VA to consider speech
 ### ----------------------------------------------------------------------------------------
 
 if __name__ == "__main__":    
@@ -132,57 +137,51 @@ if __name__ == "__main__":
 
     try:
         while running:
-            # check buffer for voice activity
-            # predict on the buffer with the highest voice activity
 
-            most_speech_chunks = 0
-            most_audio_energy = 0
-            best_mic_index = None
+            if len(mics[0]) == 0 or len(mics[1]) == 0: continue
 
-            for mic in len(buffer_que):
-                buffer = buffer_que[mic][0]
-                vad_pred = vad_model(torch.from_numpy(buffer))
-                num_speech_chunks = torch.sum((vad_pred > thres).int()).item()
+            mic1_buffer = mics[0][0]
+            mic2_buffer = mics[1][0]
+            correlation = np.correlate(mic1_buffer, mic2_buffer, 'full')
+            delay = np.argmax(correlation) - (len(mic2_buffer) - 1)
+            if delay > 0:
+                mic2_buffer = np.concatenate([np.zeros(delay), mic2_buffer])
+            else:
+                mic2_buffer = mic2_buffer[-delay:]
 
-                rel_speech_chunks = num_speech_chunks / vad_pred.shape[0]
-                audio_energy = torch.mean(torch.abs(torch.from_numpy(buffer)))
+            combined_buffer = 0.5 * (mic1_buffer + mic2_buffer)
+            
+            VAD_pred = vad_model(torch.from_numpy(combined_buffer))
+            number_speech_chunks = torch.sum((VAD_pred > thres).int()).item()
+            percent_speech_chunks = number_speech_chunks / VAD_pred.shape[0]
 
-                if rel_speech_chunks > most_speech_chunks and audio_energy > most_audio_energy:
-                    most_speech_chunks = rel_speech_chunks
-                    most_audio_energy = audio_energy
-                    best_mic_index = mic
+            reached_speech_threshold = percent_speech_chunks > percent_thres
+            room_in_que = len(prediction_que) < int(longestWhisperBuffer / record_seconds)
 
-            if most_speech_chunks > rel_thres and len(prediction_que) < int(longestWhisperBuffer / record_seconds) and most_audio_energy > energy_threshold:
-                prediction_que.append(buffer_que[best_mic_index][0])
-            elif len(prediction_que) > 0:
-                # no speech detected or there is no room left in the que
-                # if there is something in the que mark it for clearing and preform one last prediction
-                clear_que = True
+            if reached_speech_threshold and room_in_que:
+                prediction_que.append(combined_buffer)
 
-            # clear the buffers
-            for mic in len(buffer_que):
-                del buffer_que[mic][0]
+            else:
+                clear_prediction_que = True
+
+            del mics[0][0]
+            del mics[1][0]
 
             if len(prediction_que) > 0:
                 transcription = prediction(prediction_que)
 
-                if clear_que:
-                    # clear the prediction que
-                    prediction_que[:] = []
-                    i = 0
-                    clear_que = False
-                    # reset the variable stopping tcp communication
-                    tcpCommunicator.command_sent = False
-
-                # send the prediction off to be parsed for keywords in another thread
-                # run a thread to parse the prediciton each time the transcript is re made so that as soon as a command is detected after n runs it will immediately be sent
                 if not tcpCommunicator.command_sent:
-                    DEBUG = False # if you want to see errors in the threads set to true so the regular threading class is used. 
+                    DEBUG = True # if you want to see errors in the threads set to true so the regular threading class is used. 
                     if DEBUG:
-                        t = threading.Thread(target=kw_helper.parse_prediction, args=(transcription, tcpCommunicator), daemon=True) # args expects an iterable
+                        t = threading.Thread(target=kw_helper.parse_prediction, args=(transcription, tcpCommunicator), daemon=True)
                         t.start()
                     else:
                         executor.submit(kw_helper.parse_prediction, (transcription, tcpCommunicator))
+                else:
+                    reset_que()
+
+                if clear_prediction_que:
+                    reset_que()
                 
     except KeyboardInterrupt:
         print("\nStopping...")
