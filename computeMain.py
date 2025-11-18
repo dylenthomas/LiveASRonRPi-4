@@ -69,8 +69,8 @@ def prediction(prediction_que):
     segments = model.transcribe(features, beam_size=5, language="en")
 
     for segment in segments:
-        cleaned_text = re.sub(r'[^\w\s]', '', segment.text) # remove all non characters and whitespace
-        print("[%.2fs -> %.2fs] \t%s" % (segment.start, segment.end, cleaned_text))
+        cleaned_text = segment.text.lstrip()
+        print("[%.2fs -> %.2fs]-%s" % (segment.start, segment.end, cleaned_text))
         transcription.append(cleaned_text)
 
     return transcription
@@ -97,7 +97,7 @@ def parse_transcript(transcript):
         most_similar_keyword = most_similar_keyword_type[max_similarity_ind[1]]
             
         packet = f'{most_similar_keyword},'
-        print("Sending: ", packet)
+        print("Sending:", packet)
         tcpCommunicator.sendToServer(packet)
 
         print("Sent.")
@@ -195,7 +195,7 @@ if __name__ == "__main__":
                 transcript = prediction(prediction_que)
 
                 if not tcpCommunicator.command_sent:
-                    DEBUG = False # if you want to see errors in the threads set to true so the regular threading class is used. 
+                    DEBUG = True # if you want to see errors in the threads set to true so the regular threading class is used. 
                     if DEBUG:
                         t = threading.Thread(target=parse_transcript, args=(transcript,), daemon=True)
                         t.start()
