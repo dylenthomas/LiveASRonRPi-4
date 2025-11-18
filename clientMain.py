@@ -1,6 +1,7 @@
 import RPi.GPIO as GPIO
+import subprocess
 
-from utils.LARS_utils import kwVectorHelper, TCPCommunication
+from utils.LARS_utils import TCPCommunication
 
 ### AMP Remote scancodes for ir-ctl
 # Kenwood RC-80 IR codes (protocol: NEC)
@@ -98,7 +99,7 @@ CODES = {
 }
 ###
 
-class BinaryAction:
+class BinaryPinAction:
     def __init__(self, pins, on_voltage):
         """
             on_voltage - the setting to set the pin to turn this action on (HIGH or LOW)
@@ -132,38 +133,42 @@ class BinaryAction:
         
         self.state = not self.state
 
+class InfaRedAction:
+    def __init__(self, protocol):
+        self.protocol = protocol
+        self.base_cmd = ["ir-ctl", "-S"]
+
+    def blast(self, scancode_key):
+        pulse = f"{self.protocol}:{CODES[scancode_key]}"
+        cmd = self.base_cmd.append(pulse)
+
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode != 0:
+            print("Error:", result.stderr)
+        else:
+            print("IR Signal sent.")
+        
 
 ### Setup GPIO Pins ---
-GPIO.setmode(GPIO.BOARD) # use physical board numbering
+GPIO.setwarnings(False)
+GPIO.setmode(GPIO.BCM) # use physical board numbering
 
-overhead_lamp_pin = 15
-desk_lights_pin = 18
+surge_protector_pin = 16
 
-GPIO.setup(overhead_lamp_pin, GPIO.OUT)
-GPIO.setup(desk_lights_pin, GPIO.OUT)
+GPIO.setup(surge_protector_pin, GPIO.OUT)
 ###
 
 ### Setup Actions ---
-overhead_lamp = BinaryAction((overhead_lamp_pin,), GPIO.LOW)
-desk_lights = BinaryAction((desk_lights_pin,), GPIO.LOW)
-all_lights = BinaryAction([desk_lights_pin, overhead_lamp_pin], GPIO.LOW)
+#overhead_lamp = BinaryPinAction((overhead_lamp_pin,), GPIO.LOW)
+#desk_lights = BinaryPinAction((desk_lights_pin,), GPIO.LOW)
+master_switch = BinaryPinAction((surge_protector_pin,), GPIO.LOW)
+#kenwood_amp = InfaRedAction("nec")
 ###
 
-kw_helper = kwVectorHelper()
-kw_encodings = kw_helper.get_encodings()
-# switch the values for keys and keys for values so we can get an action by its index
-kw_encodings = {
-    str(value): key for key, value in kw_encodings.items()
-    }
-
 kw_to_action = {
-    "lights": all_lights.flip_state,
-    "lights on": all_lights.on,
-    "lights off": all_lights.off,
-    "overhead lamp off": overhead_lamp.off,
-    "overhead lamp on": overhead_lamp.on,
-    "desk lights off": desk_lights.off,
-    "desk lights on": desk_lights.on 
+    "lights": master_switch.flip_state,
+    "lights on": master_switch.on,
+    "lights off": master_switch.off
 }
 
 running = True
@@ -177,15 +182,13 @@ if __name__ == "__main__":
     try:
         while running:
             packet = tcpCommunicator.readFromClient()
+            if packet is None or packet == "": continue
             print("Recieved packet: ", packet)
 
-            if packet is None: continue
-            
             packet = packet.split(",")
             for i in packet:
                 if i == '': continue # skip the empty entry at the end
-                keyword = kw_encodings[i]
-                kw_to_action[keyword]() # execute action
+                kw_to_action[i]() # execute action
 
     except KeyboardInterrupt:
         print("\nStopping...")

@@ -143,6 +143,7 @@ class TCPCommunication():
             except socket.error as msg:
                 print("[TCP ERROR]: {}".format(msg))
                 sys.exit(1)
+            self.s = s
 
         self.conn = conn
         self.addr = addr
