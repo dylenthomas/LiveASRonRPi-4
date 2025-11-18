@@ -114,24 +114,26 @@ class BinaryPinAction:
             self.off_voltage = GPIO.LOW
         else:
             self.off_voltage = GPIO.HIGH
+
+        self.turn_on()
         
-    def on(self):
-        self.state = True
+    def turn_on(self):
+        self.on = True
 
         for pin in self.pins:
             GPIO.output(pin, self.on_voltage)
     
-    def off(self):
-        self.state = False
+    def turn_off(self):
+        self.on = False
 
         for pin in self.pins:
             GPIO.output(pin, self.off_voltage)
 
     def flip_state(self):
         for pin in self.pins:
-            GPIO.output(pin, self.on_voltage if self.state else self.off_voltage)
+            GPIO.output(pin, self.off_voltage if self.on else self.on_voltage)
         
-        self.state = not self.state
+        self.on = not self.on
 
 class InfaRedAction:
     def __init__(self, protocol):
@@ -167,8 +169,8 @@ master_switch = BinaryPinAction((surge_protector_pin,), GPIO.LOW)
 
 kw_to_action = {
     "lights": master_switch.flip_state,
-    "lights on": master_switch.on,
-    "lights off": master_switch.off
+    "lights on": master_switch.turn_on,
+    "lights off": master_switch.turn_off
 }
 
 running = True
@@ -183,12 +185,13 @@ if __name__ == "__main__":
         while running:
             packet = tcpCommunicator.readFromClient()
             if packet is None or packet == "": continue
-            print("Recieved packet: ", packet)
+            print("Recieved packet:", packet)
 
             packet = packet.split(",")
             for i in packet:
-                if i == '': continue # skip the empty entry at the end
-                kw_to_action[i]() # execute action
+                if i in list(kw_to_action.keys()):
+                    action = kw_to_action[i]
+                    action()
 
     except KeyboardInterrupt:
         print("\nStopping...")
