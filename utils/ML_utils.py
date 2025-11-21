@@ -114,14 +114,28 @@ class onnxWraper():
         ort_opts.inter_op_num_threads = 1
         ort_opts.intra_op_num_threads = 1
 
-        if force_cpu and "CPUExecutionProvider" in ort.get_available_providers():
-            self.inference_ses = ort.InferenceSession(path, providers=["CPUExecutionProvider"], sess_options=ort_opts)
-            print("onnx is using CPU")
-        else:
+        if "CUDAExecutionProvider" in ort.get_available_providers() and not force_cpu:
             self.inference_ses = ort.InferenceSession(path, providers=["CUDAExecutionProvider"], sess_options=ort_opts)
             print("onnx is using CUDA")
+        else:
+            self.inference_ses = ort.InferenceSession(path, providers=["CPUExecutionProvider"], sess_options=ort_opts)
+            print("onnx is using CPU")
 
         self._reset_states()
+
+        self.num_samples = 512
+
+        print("Onnx Inputs")
+        for input_info in self.inference_ses.get_inputs():
+            print("Input type name: {}".format(input_info.name))
+            print("Input type shape: {}".format(input_info.shape))
+            print("Input type info: {}".format(input_info.type))
+
+        print("Onnx Outputs")
+        for output_info in self.inference_ses.get_outputs():
+            print("Output type name: {}".format(output_info.name))
+            print("Output type shape: {}".format(output_info.shape))
+            print("Output type info: {}".format(output_info.type))
 
     def _validate_shape(self, x):
         if x.dim() == 1:
@@ -136,30 +150,33 @@ class onnxWraper():
         self._context = torch.zeros(0)
         self._last_batch_size = 0
 
+    def reset(self):
+        self._reset_states(self._last_batch_size)
+
     def __call__(self, x):
+        original_audio = x.clone()
         x = self._validate_shape(x)
-        num_samples = 512
-        if x.shape[-1] != num_samples and x.shape[-1] % num_samples != 0:
+        if x.shape[-1] != self.num_samples and x.shape[-1] % self.num_samples != 0:
             # reshape the data so the VAD model can process it
-            remainder = x.shape[-1] % num_samples
+            remainder = x.shape[-1] % self.num_samples
             
             remainder_data = x[:, -remainder:] # set aside the remainder data
             x = x[:, :-remainder] # cut off the remainder data
 
-            x = torch.reshape(x, (x.shape[-1] // num_samples, num_samples)) # reshape data
-            remainder_data = nn.functional.pad(remainder_data, (0, num_samples-remainder), "constant", 0) # zero pad
+            x = torch.reshape(x, (x.shape[-1] // self.num_samples, self.num_samples)) # reshape data
+            remainder_data = nn.functional.pad(remainder_data, (0, self.num_samples-remainder), "constant", 0) # zero pad
 
             x = torch.cat((x, remainder_data))
         
         else:
-            x = torch.reshape(x, (x.shape[-1] // num_samples, num_samples))
+            x = torch.reshape(x, (x.shape[-1] // self.num_samples, self.num_samples))
             
         batch_size = x.shape[0]
         context_size = 64
 
         if not self._last_batch_size:
             self._reset_states(batch_size)
-        if self._last_batch_size and self._last_batch_size != batch_size:
+        elif self._last_batch_size != batch_size:
             self._reset_states(batch_size)
 
         if not len(self._context):
@@ -172,8 +189,7 @@ class onnxWraper():
         out, state = ort_outs
         self._state = torch.from_numpy(state)
 
-        self._context = x[..., -context_size:]
+        self._context = original_audio[..., -context_size:]
         self._last_batch_size = batch_size
 
-        out = torch.from_numpy(out)
-        return out
+        return torch.from_numpy(out)
