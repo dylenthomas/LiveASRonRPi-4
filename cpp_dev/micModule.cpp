@@ -85,7 +85,7 @@ extern "C" {
     }
 
     float* get_speech(
-        float max_audio_length,
+        int max_audio_length,
         int* collected_samples, 
         float speech_threshold
     ) {
@@ -113,6 +113,12 @@ extern "C" {
 
             speech_prob = vad->process(predict_buffer);
             speech_detected = speech_prob >= speech_threshold;
+
+            std::copy(
+                predict_buffer.begin(), 
+                predict_buffer.end(), 
+                buf_storage + (i * buffer_samples * channels)
+            );
             
             if (!speech_detected) { break; }
         }
