@@ -36,9 +36,11 @@ tcpCommunicator = TCPCommunication()
 clib_mic = CDLL("utils/micModule.so")
 
 clib_mic.accessMicrophone.argtypes = [c_char_p, c_uint, c_int, c_int, c_float, POINTER(c_int)]
-clib_mic.accessMicrophone.restype = POINTER(c_short)
-clib_mic.freeBuffer.argtypes = [POINTER(c_short)]
+clib_mic.accessMicrophone.restype = POINTER(c_float)
+clib_mic.freeBuffer.argtypes = [POINTER(c_float)]
 clib_mic.freeBuffer.restype = None
+clib_mic.close_mic.argtypes = [c_char_p]
+clib_mic.close_mic.restype = None
 ### -------------------------------------------------------------------------------------------------
 
 def audio_loop1():
@@ -49,11 +51,11 @@ def audio_loop1():
         ptr1 = clib_mic.accessMicrophone(mic_name1, sample_rate, channels, buffer_frames, record_seconds, byref(sample_count1))
        
         buffer1 = np.ctypeslib.as_array(ptr1, shape=(sample_count1.value,))
-        buffer1 = buffer1.astype(np.float32) / 32768.0 # convert to float32
         clib_mic.freeBuffer(ptr1)
 
-
         mics[0].append(buffer1)
+
+    clib_mic.close_mic(mic_name1)
 
 def audio_loop2():
     print("Starting mic2...")
@@ -63,10 +65,11 @@ def audio_loop2():
         ptr2 = clib_mic.accessMicrophone(mic_name2, sample_rate, channels, buffer_frames, intrecord_seconds, byref(sample_count2))
 
         buffer2 = np.ctypeslib.as_array(ptr2, shape=(sample_count2.value,))
-        buffer2 = buffer2.astype(np.float32) / 327680.0 #convert to float32
         clib_mic.freeBuffer(ptr2)
                
         mics[1].append(buffer2)
+
+    clib_mic.close_mic(mic_name2)
 
 def transcribe(prediction_que):
     transcription = []
