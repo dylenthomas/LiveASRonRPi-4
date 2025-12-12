@@ -33,6 +33,8 @@ tcpCommunicator = TCPCommunication()
 ### -------------------------------------------------------------------------------------------------
 
 ### define c++ functions ----------------------------------------------------------------------------
+
+# MAKE A SO LIBRARY FOR EACH MIC
 clib_mic = CDLL("utils/micModule.so")
 
 clib_mic.accessMicrophone.argtypes = [c_char_p, c_uint, c_int, c_int, c_float, POINTER(c_int)]
@@ -121,9 +123,6 @@ sample_count1 = c_int()
 sample_count2 = c_int()
 mic_name1 = b"plughw:CARD=Snowball"
 mic_name2 = b"plughw:CARD=Snowball_1"
-sample_rate = 16000
-channels = 1
-buffer_frames = vad_model.num_samples
 record_seconds = 0.5
 
 prediction_que = []

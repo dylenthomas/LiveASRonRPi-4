@@ -4,15 +4,24 @@
 
 #include <stdio.h>
 #include <cmath>
+#include <algorithm>
 
 #include <alsa/asoundlib.h>
+#include "VADmodel.h"
 
 // Build command:
-// g++ -fPIC -shared -o utils/micModule.so micModule.cpp -I /home/dylenthomas/networkShare/mnemosyne/calliope/LARS/onnxruntime-linux-x64-1.12.1/include/ -L /home/dylenthomas/networkShare/mnemosyne/calliope/LARS/onnxruntime-linux-x64-1.12.1/lib  -lasound -lonnxruntime -Wl,-rpath,/home/dylenthomas/networkShare/mnemosyne/calliope/LARS/onnxruntime-linux-x64-1.12.1/lib
+// g++ -fPIC -shared -o utils/mic1.so cpp_dev/micModule.cpp -I /home/dylenthomas/networkShare/mnemosyne/calliope/LARS/onnxruntime-linux-x64-1.12.1/include/ -L /home/dylenthomas/networkShare/mnemosyne/calliope/LARS/onnxruntime-linux-x64-1.12.1/lib  -lasound -lonnxruntime -Wl,-rpath,/home/dylenthomas/networkShare/mnemosyne/calliope/LARS/onnxruntime-linux-x64-1.12.1/lib
 
+const char model_path[] = "../.model/silero_vad_16k_op15.onnx";
+const int sample_rate = 16000;
+const int buffer_samples = 512;
+const int channels = 1;
 
-//static std::unique_ptr<VAD> vad_model = std::make_unique<VAD>();
-VAD vad_model("ab", 10, 10);
+static std::unique_ptr<VAD> vad = std::make_unique<VAD>(
+    model_path, sample_rate, buffer_samples
+);
+
+static snd_pcm_t *capture_handle;
 
 void checkErr(int err, int check_val) {
     if (err < check_val) {
@@ -21,11 +30,11 @@ void checkErr(int err, int check_val) {
     }
 }
 
-void read_mic(snd_pcm_t capture_handle, std::vector<float>& predict_buffer, int frames, int channels) {
+void read_mic(std::vector<float>& predict_buffer) {
     int err;
-    std::vector<int16_t> read_buffer(frames * channels, 0);
+    std::vector<int16_t> read_buffer(buffer_samples * channels, 0);
 
-    if ((err = snd_pcm_readi(capture_handle, read_buffer.data(), frames)) != frames) {
+    if ((err = snd_pcm_readi(capture_handle, read_buffer.data(), buffer_samples)) != buffer_samples) {
         fprintf(stderr, "read from audio interface failed (%s)\n", snd_strerror(err));
         int recovery = snd_pcm_recover(capture_handle, err, 1);
         if (recovery < 0) {
@@ -46,10 +55,6 @@ extern "C" {
         vad.reset();
     }
 
-    void init_vad_model(const wchar_t* model_path, int rate, int buffer_length) {
-        vad_model = std::make_unique<VAD>(model_path, rate, speech_threshold, buffer_length);
-    }
-
     /* free the returned audio data buffer in python from memory since python doesn't own that memory */
     void free_buffer(float* buffer) {
         delete[] buffer;
@@ -58,10 +63,9 @@ extern "C" {
     // Algorithim: 
     //  Once called wait until speech is detected to start adding audio to return buffer. Then once the person stops talking or max length is reached return the buffer. 
 
-    void init_mic(const char* name, int rate, int channels) {
+    void init_mic(const char* name) {
         int err;
-
-        snd_pcm_t *capture_handle;
+        unsigned int sr = sample_rate;
         snd_pcm_hw_params_t *hw_params;
         
         checkErr(snd_pcm_open(&capture_handle, name, SND_PCM_STREAM_CAPTURE, 0), 0);
@@ -69,50 +73,48 @@ extern "C" {
         checkErr(snd_pcm_hw_params_any(capture_handle, hw_params), 0);
         checkErr(snd_pcm_hw_params_set_access(capture_handle, hw_params, SND_PCM_ACCESS_RW_INTERLEAVED), 0);
         checkErr(snd_pcm_hw_params_set_format(capture_handle, hw_params, SND_PCM_FORMAT_S16_LE), 0);
-        checkErr(snd_pcm_hw_params_set_rate_near(capture_handle, hw_params, &rate, 0), 0);
+        checkErr(snd_pcm_hw_params_set_rate_near(capture_handle, hw_params, &sr, 0), 0);
         checkErr(snd_pcm_hw_params_set_channels(capture_handle, hw_params, channels), 0);
         checkErr(snd_pcm_hw_params(capture_handle, hw_params), 0);
         snd_pcm_hw_params_free(hw_params);
         checkErr(snd_pcm_prepare(capture_handle), 0);
     }
 
-    void close_mic(snd_pcm_t capture_handle) {
+    void close_mic() {
         snd_pcm_close(capture_handle);
     }
 
-    float* get_speech(const char* name, unsigned int rate, int channels, int frames, float max_audio_length, int* collected_samples, float speech_threshold) {
-        int iters = std::round((rate * max_audio_length) / frames);
-        int total_samples = frames * channels * iters;
+    float* get_speech(
+        float max_audio_length,
+        int* collected_samples, 
+        float speech_threshold
+    ) {
+        int iters = std::round((sample_rate * max_audio_length) / buffer_samples);
+        int total_samples = buffer_samples * channels * iters;
         int err;
 
         float speech_prob;
     
-        std::vector<float> predict_buffer(frames * channels, 0.0f);
+        std::vector<float> predict_buffer(buffer_samples * channels, 0.0f);
         /* allocate array on the heap, so they can be transferred to python since they survive after the function ends 
            returning something like short buf_storage[total_smaples] would return a pointer to dead memory */
         float* buf_storage = new float[total_samples];
+        bool speech_detected = false;
 
-        // wait for speech to be detected
-        while (1) {
-            read_mic(predict_buffer, frames, channels);
+        while (!speech_detected) {
+            read_mic(predict_buffer);
 
-            speech_prob = vad_model.predict(predict_buffer)
-            if (speech_prob >= speech_threshold) {
-                std::copy(predict_buffer.begin(), predict_buffer.end(), buf_storage);
-                break;
-            }
+            speech_prob = vad->process(predict_buffer);
+            speech_detected = speech_prob >= speech_threshold;
         }
 
         for (int i = 0; i < iters; i++) {
-            read_mic(predict_buffer, frames, channels);
+            read_mic(predict_buffer);
 
-            speech_prob = vad_model.predict(predict_buffer);
-            if (speech_prob >= speech_threshold) {
-                std::copy(predict_buffer.begin(), predict_buffer.end(), buf_storage + read_buffer.size() * (i + 1));
-            }
-            else {
-                break;
-            }
+            speech_prob = vad->process(predict_buffer);
+            speech_detected = speech_prob >= speech_threshold;
+            
+            if (!speech_detected) { break; }
         }
 
         *collected_samples = total_samples;

@@ -25,7 +25,7 @@ private:
     // ONNX Runtime resources
     Ort::Env env;
     Ort::SessionOptions session_options;
-    std::shared_ptr<Ort::Session> session = nullptr;
+    std::shared_ptr<Ort::Session> session;
     Ort::AllocatorWithDefaultOptions allocator;
     Ort::MemoryInfo memory_info = Ort::MemoryInfo::CreateCpu(
         OrtAllocatorType::OrtArenaAllocator, 
@@ -54,9 +54,9 @@ private:
 
     int sample_rate;
 
-    void init_onnx_model(const std::wstring& model_path) {
+    void init_onnx_model(const char* model_path) {
         init_engine_threads(1, 1);
-        session = std::make_shared<Ort::Session>(env, model_path.c_str(), session_options);
+        session = std::make_shared<Ort::Session>(env, model_path, session_options);
     }
 
     void init_engine_threads(int inter_threads, int intra_threads) {
@@ -89,7 +89,7 @@ private:
         ort_inputs.emplace_back(std::move(state_ort));
         ort_inputs.emplace_back(std::move(sr_ort));
 
-        ort_outputs = session ->Run(
+        ort_outputs = session->Run(
             Ort::RunOptions{ nullptr },
             input_node_names.data(), ort_inputs.data(), ort_inputs.size(),
             output_node_names.data(), output_node_names.size()
@@ -100,11 +100,10 @@ private:
         std::memcpy(_state.data(), stateN, size_state * sizeof(float));
         std::copy(new_buffer.begin(), new_buffer.end(), _context.begin());
 
-        return speech_prob;
-
 #ifndef __DEBUG_SPEECH_PROB__
         printf("Chance of speech: %.3f\n", speech_prob);
 #endif
+        return speech_prob;
     }
 
 public:
@@ -117,10 +116,10 @@ public:
     }
 
 public: // Constructor
-    VAD(const std::wstring model_path, int rate, int buffer_samples) {
+    VAD(const char* model_path, const int rate, const int buffer_samples) {
         this->sample_rate = rate;
         this->effective_window_size = buffer_samples + context_samples;
 
         init_onnx_model(model_path);
     }
-}
+};
