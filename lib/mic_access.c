@@ -9,7 +9,7 @@ void checkErr(int err) {
 }
 
 // TODO Check this implementation of snd_pcm_readi
-void read_mic(float *buffer, snd_pcm_t *capture_handle) {
+void read_mic(float *buffer, snd_pcm_t *capture_handle, int buffer_samples) {
 	int err = snd_pcm_readi(capture_handle, buffer, buffer_samples);
 	if (err != buffer_samples) {
 		fprintf(stderr, "Read from audio interface failed! (%s)\n", snd_strerror(err));
@@ -19,7 +19,7 @@ void read_mic(float *buffer, snd_pcm_t *capture_handle) {
 	// TODO implement high pass filter
 }
 
-void init_mic(const char *name, snd_pcm_t *capture_handle) {
+void init_mic(const char *name, snd_pcm_t *capture_handle, int sample_rate, int channels, int buffer_samples) {
 	int err;
 	unsigned int usr = sample_rate;
 	snd_pcm_hw_params_t *hw_params
