@@ -8,7 +8,7 @@
 #include "mic_access.h"
 
 int badStatus(OrtStatus* status, const OrtApi* ort) {
-	// Make sure the Api was accessed correctly
+	// Make sure the Api was accessed correctly 
 	if (status != NULL) {
 		const char* err_msg = ort->GetErrorMessage(status);
 		fprintf(stderr, "ORT Error: %s\n", err_msg);
@@ -18,29 +18,25 @@ int badStatus(OrtStatus* status, const OrtApi* ort) {
 	return 0;
 }
 
-int kbhit() {
-    struct timeval tv = {0L, 0L};
-    fd_set fds;
-    FD_ZERO(&fds);
-    FD_SET(0, &fds);
-    return select(1, &fds, NULL, NULL, &tv);
-}
-
+// TODO: Check that all data and the model are instantiated with the same memory scope (since I am getting a seg fault) 
 int main(int argc, char *argv[]) {
-	if (argc != 3) { printf("There should be only two args, VAD model path then mic name."); return 0; }
+	if (argc != 3) { printf("There should be only two args, VAD model path then mic name.\n"); return 0; }
 	const char* vad_model_path = argv[1];
 	const char* mic1_name = argv[2];
 
-	int sample_rate[] = {16000};
+	int64_t sample_rate[] = {16000};
+	const int64_t sample_rate_shape[] = {1};
 
 	int64_t input_data_shape[] = {1, 512}; // input data will be the mic buffer
+	int64_t state_data_shape[] = {2, 1, 128};	
 
 	float buffer[512] = {0};
+	float initial_state[2 * 1 * 128] = {0};
 
-	const char* const input_names_arr = {"input", "state", "sr"};
-	const char* const* input_names = &input_names_arr;
-	const char* const output_names_arr = {"output", "stateN"};
-	const char* const* output_names = &output_names_arr;
+	const char* input_names[] = {"input", "state", "sr"};
+	//const char* const* input_names = &input_names_arr;
+	const char* output_names[] = {"output", "stateN"};
+	//const char* const* output_names = &output_names_arr;
 	
 	OrtValue* input_tensor = NULL;
 	OrtValue* state_tensor = NULL;
@@ -66,14 +62,20 @@ int main(int argc, char *argv[]) {
 	if (badStatus(ort->CreateRunOptions(&ort_run_opts), ort)) { return 1; }
 
 	OrtMemoryInfo* mem_info = NULL;
-	if (badStatus(ort->CreateMemoryInfo("cpu", OrtArenaAllocator, 0, OrtMemTypeCPU, &mem_info), ort)) { return 1; }
+	if (badStatus(ort->CreateCpuMemoryInfo(OrtArenaAllocator, OrtMemTypeDefault, &mem_info), ort)) { return 1; }
 
 	OrtAllocator* alloc = NULL;
 	if (badStatus(ort->GetAllocatorWithDefaultOptions(&alloc), ort)) { return 1; }
 	
 	if (badStatus(ort->CreateTensorWithDataAsOrtValue(
-		mem_info, sample_rate, sizeof(sample_rate), (const int64_t[]){1}, 1,
-		ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT64, &sr_tensor), ort)) { return 1; }
+		mem_info, sample_rate, sizeof(sample_rate), sample_rate_shape, 1,
+		ONNX_TENSOR_ELEMENT_DATA_TYPE_INT64, &sr_tensor), ort)) { return 1; }
+
+	// create initializing state for model of all zeros 
+	if (badStatus(ort->CreateTensorWithDataAsOrtValue(
+		mem_info, initial_state, sizeof(initial_state), state_data_shape, 3,
+		ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT, &state_tensor), ort)) { return 1; }
+
 
 // -------------------------------------------------------------------------------------------------
 // Initialize Microphone ---------------------------------------------------------------------------
@@ -82,11 +84,9 @@ int main(int argc, char *argv[]) {
 	
 	init_mic(mic1_name, &mic1_ch, sample_rate[0], 1, 512);
 // -------------------------------------------------------------------------------------------------
-	printf("Starting audio collection. Press any key to stop.");
+	printf("Starting audio collection.\n");
 	while (1) {
 		OrtValue* outputs[2];
-
-		if (kbhit()) { break; }
 
 		read_mic(buffer, mic1_ch, 512); // read 512 buffer samples
 		
@@ -96,30 +96,31 @@ int main(int argc, char *argv[]) {
 		
 		const OrtValue* const inputs[3] = {input_tensor, state_tensor, sr_tensor};
 
+		printf("Starting inference\n");
 		if (badStatus(ort->Run(
 			session, ort_run_opts, input_names, inputs, 3,
 			output_names, 2, outputs), ort)) { return 1; }
-
-		if (state_tensor) {
-			// Make sure to release the previous state tensor once allocated
-			ort->ReleaseValue(state_tensor);
-		}
+		printf("Ran inference\n");
 
 		// Retrieve probability of speech from the model
 		OrtValue* ort_speech_prob = outputs[0];
+		printf("Got raw speech prob\n");
 		float* prob_data = NULL;
 		if (badStatus(ort->GetTensorMutableData(ort_speech_prob, (void**)&prob_data), ort)) { return 1; }
+		printf("Got tensor data\n");
 		float speech_prob = prob_data[0];
+		printf("Allocated tensor data\n");
 
 		fprintf(stdout, "The probability of speech is: %f\n", speech_prob); 
+
+		// release old OrtValues
+		ort->ReleaseValue(input_tensor);
+		ort->ReleaseValue(state_tensor);
+		ort->ReleaseValue(outputs[0]);
 
 		// Save the previous state for the next run.
 		state_tensor = outputs[1];
 		outputs[1] = NULL;
-
-		// release old OrtValues
-		ort->ReleaseValue(input_tensor);
-		ort->ReleaseValue(outputs[0]);
 	}
 	
 // Cleanup for program exit ------------------------------------------------------------------------

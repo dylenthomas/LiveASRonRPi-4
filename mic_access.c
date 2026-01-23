@@ -1,4 +1,5 @@
 #include "mic_access.h"
+
 #include <alsa/asoundlib.h>
 
 void checkErr(int err) {
@@ -20,10 +21,10 @@ void read_mic(float* buffer, snd_pcm_t* capture_handle, int buffer_samples) {
 }
 
 void init_mic(const char* name, snd_pcm_t** capture_handle, int sample_rate, int channels, int buffer_samples) {
-	unsigned int usr = sample_rate;
-	snd_pcm_hw_params_t* hw_params;
+		unsigned int usr = sample_rate;
+		snd_pcm_hw_params_t* hw_params;
 	
-	checkErr(snd_pcm_open(capture_handle, name, SND_PCM_STREAM_CAPTURE, 0));
+		checkErr(snd_pcm_open(capture_handle, name, SND_PCM_STREAM_CAPTURE, 0));
     checkErr(snd_pcm_hw_params_malloc(&hw_params));
     checkErr(snd_pcm_hw_params_any(*capture_handle, hw_params));
     checkErr(snd_pcm_hw_params_set_access(*capture_handle, hw_params, SND_PCM_ACCESS_RW_INTERLEAVED));
