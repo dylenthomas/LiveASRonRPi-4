@@ -9,8 +9,7 @@ void checkErr(int err) {
 	}
 }
 
-// TODO Check this implementation of snd_pcm_readi
-void read_mic(float* buffer, snd_pcm_t* capture_handle, int buffer_samples) {
+void read_mic(int16_t* buffer, snd_pcm_t* capture_handle, int buffer_samples) {
 	int err = snd_pcm_readi(capture_handle, buffer, buffer_samples);
 	if (err != buffer_samples) {
 		fprintf(stderr, "Read from audio interface failed! (%s)\n", snd_strerror(err));

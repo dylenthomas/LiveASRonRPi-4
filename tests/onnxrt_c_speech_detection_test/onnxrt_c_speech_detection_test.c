@@ -1,11 +1,17 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include <sys/select.h>
-#include <termios.h>
-#include <unistd.h>
+#include <time.h>
 
 #include "onnxruntime_c_api.h"
 #include "mic_access.h"
+
+
+
+uint64_t get_current_time_ms() {
+    struct timespec ts;
+    clock_gettime(CLOCK_REALTIME, &ts);
+    return (uint64_t)ts.tv_sec * 1000ULL + (uint64_t)ts.tv_nsec / 1000000ULL;
+}
 
 int badStatus(OrtStatus* status, const OrtApi* ort) {
 	// Make sure the Api was accessed correctly 
@@ -18,7 +24,6 @@ int badStatus(OrtStatus* status, const OrtApi* ort) {
 	return 0;
 }
 
-// TODO: Check that all data and the model are instantiated with the same memory scope (since I am getting a seg fault) 
 int main(int argc, char *argv[]) {
 	if (argc != 3) { printf("There should be only two args, VAD model path then mic name.\n"); return 0; }
 	const char* vad_model_path = argv[1];
@@ -30,6 +35,7 @@ int main(int argc, char *argv[]) {
 	int64_t input_data_shape[] = {1, 512}; // input data will be the mic buffer
 	int64_t state_data_shape[] = {2, 1, 128};	
 
+	int16_t tmp_buffer[512] = {0};
 	float buffer[512] = {0};
 	float initial_state[2 * 1 * 128] = {0};
 
@@ -62,7 +68,7 @@ int main(int argc, char *argv[]) {
 	if (badStatus(ort->CreateRunOptions(&ort_run_opts), ort)) { return 1; }
 
 	OrtMemoryInfo* mem_info = NULL;
-	if (badStatus(ort->CreateCpuMemoryInfo(OrtArenaAllocator, OrtMemTypeDefault, &mem_info), ort)) { return 1; }
+	if (badStatus(ort->CreateCpuMemoryInfo(OrtDeviceAllocator, OrtMemTypeDefault, &mem_info), ort)) { return 1; }
 
 	OrtAllocator* alloc = NULL;
 	if (badStatus(ort->GetAllocatorWithDefaultOptions(&alloc), ort)) { return 1; }
@@ -76,7 +82,10 @@ int main(int argc, char *argv[]) {
 		mem_info, initial_state, sizeof(initial_state), state_data_shape, 3,
 		ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT, &state_tensor), ort)) { return 1; }
 
-
+	if (badStatus(ort->CreateTensorWithDataAsOrtValue(
+		mem_info, buffer, sizeof(buffer), input_data_shape, 2, 
+		ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT, &input_tensor), ort)) { return 1; }
+	
 // -------------------------------------------------------------------------------------------------
 // Initialize Microphone ---------------------------------------------------------------------------
 	printf("Initializing microphone...\n");
@@ -85,39 +94,38 @@ int main(int argc, char *argv[]) {
 	init_mic(mic1_name, &mic1_ch, sample_rate[0], 1, 512);
 // -------------------------------------------------------------------------------------------------
 	printf("Starting audio collection.\n");
+	uint64_t start = get_current_time_ms();
 	while (1) {
-		OrtValue* outputs[2];
+		OrtValue* outputs[2] = {NULL, NULL};
+		read_mic(tmp_buffer, mic1_ch, 512); // read 512 buffer samples
 
-		read_mic(buffer, mic1_ch, 512); // read 512 buffer samples
-		
-		if (badStatus(ort->CreateTensorWithDataAsOrtValue(
-			mem_info, buffer, sizeof(buffer), input_data_shape, 2, 
-			ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT, &input_tensor), ort)) { return 1; }
-		
+		int i = 0;
+		while (i < 512) { buffer[i] = (float)tmp_buffer[i] / 32768.0f; i++; }
+
 		const OrtValue* const inputs[3] = {input_tensor, state_tensor, sr_tensor};
 
-		printf("Starting inference\n");
+		//printf("Starting inference\n");
 		if (badStatus(ort->Run(
 			session, ort_run_opts, input_names, inputs, 3,
 			output_names, 2, outputs), ort)) { return 1; }
-		printf("Ran inference\n");
+		//printf("Ran inference\n");
 
 		// Retrieve probability of speech from the model
 		OrtValue* ort_speech_prob = outputs[0];
-		printf("Got raw speech prob\n");
+		//printf("Got raw speech prob\n");
 		float* prob_data = NULL;
 		if (badStatus(ort->GetTensorMutableData(ort_speech_prob, (void**)&prob_data), ort)) { return 1; }
-		printf("Got tensor data\n");
+		//printf("Got tensor data\n");
 		float speech_prob = prob_data[0];
-		printf("Allocated tensor data\n");
+		//printf("Allocated tensor data\n");
 
-		fprintf(stdout, "The probability of speech is: %f\n", speech_prob); 
+		uint64_t current_time = get_current_time_ms();
+		printf("\033[2J\033[H");
+		printf("[%ld] The probability of speech is: %f\n", current_time - start, speech_prob); 
 
 		// release old OrtValues
-		ort->ReleaseValue(input_tensor);
 		ort->ReleaseValue(state_tensor);
 		ort->ReleaseValue(outputs[0]);
-
 		// Save the previous state for the next run.
 		state_tensor = outputs[1];
 		outputs[1] = NULL;
