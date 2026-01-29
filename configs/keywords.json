@@ -1,0 +1,9 @@
+{
+    "1": 
+        ["lights", "mute", "unmute"],
+    "2": 
+        ["lights on", "lights off", "volume down", "volume up"],
+    "3": 
+        ["overhead lamp off","overhead lamp on", "desk lights off", "desk lights on", 
+            "set aux audio", "set phono audio"]
+}
