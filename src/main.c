@@ -1,8 +1,15 @@
+#include <Python.h>
 #include <stdio.h>
 #include <stdlib.h>
 
 #include "onnxruntime_c_api.h"
 #include "mic_access.h"
+#include "keywordConfParser.h"
+#include "transcripter_api.h"
+
+#define KEYWORD_CONF "configs/keywords.json"
+#define MIC_BUFFER_LEN 512 
+#define SAMPLE_RATE 16000
 
 int badStatus(OrtStatus* status, const OrtApi* ort) {
 	// Make sure the Api was accessed correctly 
@@ -15,7 +22,8 @@ int badStatus(OrtStatus* status, const OrtApi* ort) {
 	return 0;
 }
 
-float getSpeechProb(
+void getSpeechProb(
+        float* speech_prob,
 		const OrtApi* ort,
 		OrtSession* session,
 		OrtRunOptions* run_ops,
@@ -25,50 +33,60 @@ float getSpeechProb(
 		) {
 	static const char* input_names[] = {"input", "state", "sr"};
 	static const char* output_names[] = {"output", "stateN"};
-		
+
 	const OrtValue* const inputs[3] = {input_tensor, state_tensor, sr_tensor};
 	OrtValue* outputs[2] = {NULL, NULL};
 	
 	if (badStatus(ort->Run(
 		session, run_opts, input_names, inputs, 3,
-		output_names, 2, outputs), ort)) { return 1; }
+		output_names, 2, outputs), ort)) 
+    { 
+        speech_prob = NULL; 
+        return;
+    }
 
 	// Retrieve probability of speech from the model
 	OrtValue* ort_speech_prob = outputs[0];
 	
 	float* prob_data = NULL;
-	if (badStatus(ort->GetTensorMutableData(ort_speech_prob, (void**)&prob_data), ort)) { return 1; }
-	float speech_prob = prob_data[0];
+	if (badStatus(ort->GetTensorMutableData(ort_speech_prob, (void**)&prob_data), ort)) { 
+        speech_prob = NULL;
+        return; 
+    }
+	*speech_prob = prob_data[0];
 
 	// release old OrtValues
-	// TODO check if I need to release input_tensor
 	ort->ReleaseValue(state_tensor);
 	ort->ReleaseValue(outputs[0]);
 	
 	// Save the previous state for the next run.
 	state_tensor = outputs[1];
 	outputs[1] = NULL;
-
-	return speech_prob;
 }
 
 // TODO implement auto read onnx model parameters
 int main(int argc, char *argv[]) {
+    Py_Initialize();
+    PyInit_transcripter();
+
 	if (argc != 3) { printf("There should be only two args, VAD model path then mic name.\n"); return 0; }
 	const char* vad_model_path = argv[1];
 	const char* mic1_name = argv[2];
 
+    const struct keywordHM keywords;
+    keywords = createKeywordHM(KEYWORD_CONF);
+
 	const float speech_threshold = 0.7; // trigger threshold to start transcription
 
-	const int64_t sample_rate[] = {16000};
+	const int64_t sample_rate[] = {SAMPLE_RATE};
 	const int64_t sample_rate_shape[] = {1};
 
-	const int64_t input_data_shape[] = {1, 512}; // input data will be the mic buffer
+	const int64_t input_data_shape[] = {1, MIC_BUFFER_LEN}; // input data will be the mic buffer
 	const int64_t state_data_shape[] = {2, 1, 128};	
 
-	int16_t tmp_buffer[512] = {0};
-    int16_t long_buffer[16000 * 30] = {0}; // 30 seconds is the most audio transcript model can take
-	float buffer[512] = {0};
+	int16_t tmp_buffer[MIC_BUFFER_LEN] = {0};
+    float long_buffer[SAMPLE_RATE * 30] = {0}; // 30 seconds is the most audio transcript model can take
+	float buffer[MIC_BUFFER_LEN] = {0};
 	float initial_state[2 * 1 * 128] = {0};
 
 	OrtValue* input_tensor = NULL;
@@ -116,24 +134,33 @@ int main(int argc, char *argv[]) {
 // Initialize Microphone ---------------------------------------------------------------------------
 	printf("Initializing microphone...\n");
 	snd_pcm_t* mic1_ch;
-	init_mic(mic1_name, &mic1_ch, sample_rate[0], 1, 512);
+	init_mic(mic1_name, &mic1_ch, sample_rate[0], 1, MIC_BUFFER_LEN);
 // -------------------------------------------------------------------------------------------------
 	printf("Starting audio collection.\n");
 	while (1) {
 		float speech_prob;
-		
-		read_mic(tmp_buffer, mic1_ch, 512); // read 512 buffer samples
+	
 		int i = 0;
-		while (i < 512) { buffer[i] = (float)tmp_buffer[i] / 32768.0f; i++; } // convert int mic data to float
+		read_mic(tmp_buffer, mic1_ch, MIC_BUFFER_LEN);
+        // convert int mic data to float	
+		while (i < MIC_BUFFER_LEN) { buffer[i] = (float)tmp_buffer[i] / 32768.0f; i++; }
 		
+		getSpeechProb(&speech_prob, ort, ort_session, ort_run_ops, input_tensor, state_tensor, sr_tensor);
+        if (speech_prob == NULL) { continue; } // if VAD failed just skip the iteration 
+        else if (*speech_prob < speech_threshold) { continue; } // if not enough skip the iteration
+        
         int z = 0;
-		speech_prob = getSpeechProb(ort, ort_session, ort_run_ops, input_tensor, state_tensor, sr_tensor);
-		while (speech_prob >= speech_threshold) {
+        while (*speech_prob >= speech_threshold) {
 			// collect audio data for transcription
-		    read_mic(tmp_buffer, mic1_ch, 512); // read 512 buffer samples
-            while(x < 512) { long_buffer[x + 512 * z] = tmp_buffer[x]; x++;}
+            i = 0;
+		    read_mic(tmp_buffer, mic1_ch, MIC_BUFFER_LEN);
+            while (i < MIC_BUFFER_LEN) { buffer[i] = (float)tmp_buffer[i] / 32768.0f; i++; } // convert int mic data to float
 			
-            speech_prob = getSpeechProb(ort, ort_session, ort_run_ops, input_tensor, state_tensor, sr_tensor);
+            getSpeechProb(&speech_prob, ort, ort_session, ort_run_ops, input_tensor, state_tensor, sr_tensor);
+            if (speech_prob == NULL) { break; } // if VAD failed stop there
+           
+            i = 0;
+            while(i < MIC_BUFFER_LEN) { long_buffer[i + MIC_BUFFER_LEN * z] = buffer[i]; i++;}
             z++;
 		}
         // should keep track of z because z = the number of buffers read, so we know where to 
@@ -147,6 +174,8 @@ int main(int argc, char *argv[]) {
 	ort->ReleaseEnv(env);
 
 	close_mic(mic1_ch);
+
+    Py_Finalize();
 
 	return 0;
 }
