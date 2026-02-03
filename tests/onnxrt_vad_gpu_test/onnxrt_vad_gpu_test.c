@@ -4,6 +4,7 @@
 
 #include "onnxruntime_c_api.h"
 #include "mic_access.h"
+#include "cuda_provider_factory.h"
 
 int badStatus(OrtStatus* status, const OrtApi* ort) {
 	// Make sure the Api was accessed correctly 
@@ -55,9 +56,13 @@ int main(int argc, char *argv[]) {
 
 	OrtSessionOptions* session_opts = NULL;
 	if (badStatus(ort->CreateSessionOptions(&session_opts), ort)) { return 1; }
-	if (badStatus(ort->SetIntraOpNumThreads(session_opts, 5), ort)) { return 1; }
-	if (badStatus(ort->SetInterOpNumThreads(session_opts, 5), ort)) { return 1; }
+	if (badStatus(ort->SetIntraOpNumThreads(session_opts, 1), ort)) { return 1; }
+	if (badStatus(ort->SetInterOpNumThreads(session_opts, 1), ort)) { return 1; }
 	if (badStatus(ort->SetSessionGraphOptimizationLevel(session_opts, ORT_ENABLE_ALL), ort)) { return 1; }
+
+    OrtCUDAProviderOptionsV2* cuda_options = NULL;
+    if (badStatus(ort->CreateCUDAProviderOptions(&cuda_options);
+    if (badStatus(ort->SessionOptionsAppendExecutionProvider_CUDA_V2(session_options, cuda_options))) { return 1; }
 
 	OrtSession* session = NULL;
 	if (badStatus(ort->CreateSession(env, vad_model_path, session_opts, &session), ort)) { return 1; }
@@ -65,24 +70,35 @@ int main(int argc, char *argv[]) {
 	OrtRunOptions* ort_run_opts = NULL;
 	if (badStatus(ort->CreateRunOptions(&ort_run_opts), ort)) { return 1; }
 
-	OrtMemoryInfo* mem_info = NULL;
-	if (badStatus(ort->CreateCpuMemoryInfo(OrtDeviceAllocator, OrtMemTypeDefault, &mem_info), ort)) { return 1; }
+	OrtMemoryInfo* gpu_mem_info = NULL;
+	if (badStatus(ort->CreateMemoryInfo_V2("Cuda", OrtMemoryInfoDeviceType_GPU, 0, 0, 
+                OrtMemTypeDefault, 0, OrtDeviceAllocator, &gpu_mem_info), ort)) { return 1; }
+
+    OrtMemoryInfo* cpu_mem_info = NULL;
+	if (badStatus(ort->CreateCpuMemoryInfo(OrtDeviceAllocator, OrtMemTypeDefault, &cpu_mem_info), ort)) { return 1; }
 
 	OrtAllocator* alloc = NULL;
 	if (badStatus(ort->GetAllocatorWithDefaultOptions(&alloc), ort)) { return 1; }
 	
 	if (badStatus(ort->CreateTensorWithDataAsOrtValue(
-		mem_info, sample_rate, sizeof(sample_rate), sample_rate_shape, 1,
+		gpu_mem_info, sample_rate, sizeof(sample_rate), sample_rate_shape, 1,
 		ONNX_TENSOR_ELEMENT_DATA_TYPE_INT64, &sr_tensor), ort)) { return 1; }
 
 	// create initializing state for model of all zeros 
 	if (badStatus(ort->CreateTensorWithDataAsOrtValue(
-		mem_info, initial_state, sizeof(initial_state), state_data_shape, 3,
+		gpu_mem_info, initial_state, sizeof(initial_state), state_data_shape, 3,
 		ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT, &state_tensor), ort)) { return 1; }
 
 	if (badStatus(ort->CreateTensorWithDataAsOrtValue(
-		mem_info, buffer, sizeof(buffer), input_data_shape, 2, 
+		gpu_mem_info, buffer, sizeof(buffer), input_data_shape, 2, 
 		ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT, &input_tensor), ort)) { return 1; }
+    
+    OrtIoBinding* io_binding = NULL;
+    if (badStatus(ort->BindInput(io_binding, "input", input_tensor))) { return 1; }
+    if (badStatus(ort->BindInput(io_binding, "state", initial_state))) { return 1; }
+    if (badStatus(ort->BindInput(io_binding, "sr", sr_tensor))) { return 1; }
+    if (badStatus(ort->BindOutputToDevice(io_binding, "output", cpu_mem_info))) { return 1; }
+    if (badStatus(ort->BindOutputToDevice(io_binding, "stateN", cpu_mem_info))) { return 1; }
 	
 // -------------------------------------------------------------------------------------------------
 // Initialize Microphone ---------------------------------------------------------------------------
@@ -92,26 +108,22 @@ int main(int argc, char *argv[]) {
 	init_mic(mic1_name, &mic1_ch, sample_rate[0], 1, 512);
 // -------------------------------------------------------------------------------------------------
 	printf("Starting audio collection.\n");
-	//uint64_t start = get_current_time_ms();
 	while (1) {
         gettimeofday(&t0, NULL); 
-		OrtValue* outputs[2] = {NULL, NULL};
+        size_t output_count = 2;
+		OrtValue* outputs[output_count] = {NULL, NULL};
 		read_mic(tmp_buffer, mic1_ch, 512); // read 512 buffer samples
 
 		int i = 0;
 		while (i < 512) { buffer[i] = (float)tmp_buffer[i] / 32768.0f; i++; }
-
-		const OrtValue* const inputs[3] = {input_tensor, state_tensor, sr_tensor};
-
-		if (badStatus(ort->Run(
-			session, ort_run_opts, input_names, inputs, 3,
-			output_names, 2, outputs), ort)) { return 1; }
+    
+        if (badStatus(ort->RunWithBinding(session, ort_run_opts, io_binding))) { return 1; } 
+        if (badStatus(ort->GetBoundOutputValues(io_binding, cpu_mem_info, &outputs, &output_count))) { return 1; }
 
 		// Retrieve probability of speech from the model
 		OrtValue* ort_speech_prob = outputs[0];
-		float* prob_data = NULL;
+		float* speech_prob = NULL;
 		if (badStatus(ort->GetTensorMutableData(ort_speech_prob, (void**)&prob_data), ort)) { return 1; }
-		float speech_prob = prob_data[0];
 
 		// release old OrtValues
 		ort->ReleaseValue(state_tensor);
@@ -122,12 +134,15 @@ int main(int argc, char *argv[]) {
 
         gettimeofday(&t1, NULL);
 		printf("\033[2J\033[H");
-		printf("[%f] The probability of speech is: %f\n", timedifference_msec(t0, t1) * 1000, speech_prob); 	
+		printf("[%f] The probability of speech is: %f\n", timedifference_msec(t0, t1) * 1000, speech_prob[0]); 	
     }
 	
 // Cleanup for program exit ------------------------------------------------------------------------
-	ort->ReleaseMemoryInfo(mem_info);
+	ort->ReleaseMemoryInfo(cpu_mem_info);
+    ort->ReleaseMemoryInfo(gpu_mem_info);
+    ort->ReleaseIoBinding(io_binding);
 	ort->ReleaseSession(session);
+    ort->ReleaseCudaProviderOptions(&cuda_opts);
 	ort->ReleaseSessionOptions(session_opts);
 	ort->ReleaseEnv(env);
 
