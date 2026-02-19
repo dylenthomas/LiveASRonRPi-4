@@ -3,9 +3,11 @@
 PROJECT_ROOT="/home/dylenthomas/Calliope/LARS/LiveASRonRPi-4"
 OUT_NAME="test"
 
-gcc -g -Wall onnxrt_c_speech_detection_test.c \
+gcc -g -Wall onnxrt_vad_gpu_test.c \
 	-I $PROJECT_ROOT/include \
-	-L $PROJECT_ROOT/libs \
+    -I $PROJECT_ROOT/include/onnxruntime \
+    -L $PROJECT_ROOT/libs \
+	-L $PROJECT_ROOT/libs/onnxruntime \
 	-lasound -lonnxruntime -lmic_access \
 	-o $OUT_NAME 
 
