@@ -7,7 +7,7 @@ set(CMAKE_DEPENDS_GENERATOR "Unix Makefiles")
 # The top level Makefile was generated from the following files:
 set(CMAKE_MAKEFILE_DEPENDS
   "CMakeCache.txt"
-  "/home/dylenthomas/Calliope/LARS/LiveASRonRPi-4/tests/onnxrt_vad_gpu_test/CMakeLists.txt"
+  "/home/dylenthomas/LiveASRonRPi-4/tests/onnxrt_vad_gpu_test/CMakeLists.txt"
   "CMakeFiles/3.28.3/CMakeCCompiler.cmake"
   "CMakeFiles/3.28.3/CMakeCUDACompiler.cmake"
   "CMakeFiles/3.28.3/CMakeSystem.cmake"

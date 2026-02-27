@@ -1,4 +1,4 @@
-# Install script for directory: /home/dylenthomas/Calliope/LARS/LiveASRonRPi-4/tests/onnxrt_vad_gpu_test
+# Install script for directory: /home/dylenthomas/LiveASRonRPi-4/tests/onnxrt_vad_gpu_test
 
 # Set the install prefix
 if(NOT DEFINED CMAKE_INSTALL_PREFIX)
@@ -50,5 +50,5 @@ endif()
 
 string(REPLACE ";" "\n" CMAKE_INSTALL_MANIFEST_CONTENT
        "${CMAKE_INSTALL_MANIFEST_FILES}")
-file(WRITE "/home/dylenthomas/Calliope/LARS/LiveASRonRPi-4/tests/onnxrt_vad_gpu_test/build/${CMAKE_INSTALL_MANIFEST}"
+file(WRITE "/home/dylenthomas/LiveASRonRPi-4/tests/onnxrt_vad_gpu_test/build/${CMAKE_INSTALL_MANIFEST}"
      "${CMAKE_INSTALL_MANIFEST_CONTENT}")

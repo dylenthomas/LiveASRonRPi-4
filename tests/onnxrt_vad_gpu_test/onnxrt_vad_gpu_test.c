@@ -133,27 +133,34 @@ int main(int argc, char *argv[]) {
 // -------------------------------------------------------------------------------------------------
 	printf("Starting audio collection.\n");
 	while (1) {
-        gettimeofday(&t0, NULL); 
-        size_t output_count = 2;
-		OrtValue* outputs[2] = {NULL, NULL};
-        OrtValue** outputs_ptr = outputs;
+        	gettimeofday(&t0, NULL); 
+        	size_t output_count = 2;
+		//OrtValue* outputs[2] = {NULL, NULL};
+		OrtValue** outputs = NULL;
+        	OrtValue** outputs_ptr = outputs;
 		read_mic(tmp_buffer, mic1_ch, 512); // read 512 buffer samples
 
 		int i = 0;
 		while (i < 512) { buffer[i] = (float)tmp_buffer[i] / 32768.0f; i++; }
-        printf("Collected audio data\n");
+        	//printf("Collected audio data\n");
        
-        printf("Starting inference\n");
-        if (badStatus(ort->RunWithBinding(session, ort_run_opts, io_binding), ort)) { return 1; } 
-        printf("Finished running inference\n");
-        printf("Retrieving values from GPU\n");
-        if (badStatus(ort->GetBoundOutputValues(io_binding, alloc, &outputs_ptr, &output_count), ort)) { return 1; }
-        printf("Retrieved values\n");
+        	//printf("Starting inference\n");
+        	if (badStatus(ort->RunWithBinding(session, ort_run_opts, io_binding), ort)) { return 1; } 
+        	//printf("Finished running inference\n");
+        	//printf("Retrieving values from GPU\n");
+        	if (badStatus(ort->GetBoundOutputValues(io_binding, alloc, &outputs, &output_count), ort)) { return 1; }
+        	//printf("Retrieved values\n");
 
 		// Retrieve probability of speech from the model
 		OrtValue* ort_speech_prob = outputs[0];
+		if (ort_speech_prob == NULL) {
+			fprintf(stderr, "Error: Ouput tensor is NULL\n");
+			return 1;
+		}
 		float* speech_prob = NULL;
+		//printf("Decoding speech probability\n");
 		if (badStatus(ort->GetTensorMutableData(ort_speech_prob, (void**)&speech_prob), ort)) { return 1; }
+		//printf("Got speech probability\n");
 
 		// release old OrtValues
 		ort->ReleaseValue(state_tensor);
@@ -162,9 +169,9 @@ int main(int argc, char *argv[]) {
 		state_tensor = outputs[1];
 		outputs[1] = NULL;
 
-        gettimeofday(&t1, NULL);
+        	gettimeofday(&t1, NULL);
 		printf("\033[2J\033[H");
-		printf("[%f] The probability of speech is: %f\n", timedifference_msec(t0, t1) * 1000, speech_prob[0]); 	
+		printf("[%.3f] The probability of speech is: %f\n", timedifference_msec(t0, t1), speech_prob[0]); 	
     }
 	
 // Cleanup for program exit ------------------------------------------------------------------------

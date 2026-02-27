@@ -1,5 +1,5 @@
 CMakeFiles/test.dir/onnxrt_vad_gpu_test.c.o: \
- /home/dylenthomas/Calliope/LARS/LiveASRonRPi-4/tests/onnxrt_vad_gpu_test/onnxrt_vad_gpu_test.c \
+ /home/dylenthomas/LiveASRonRPi-4/tests/onnxrt_vad_gpu_test/onnxrt_vad_gpu_test.c \
  /usr/include/stdc-predef.h /usr/include/stdio.h \
  /usr/include/x86_64-linux-gnu/bits/libc-header-start.h \
  /usr/include/features.h /usr/include/features-time64.h \
@@ -50,7 +50,7 @@ CMakeFiles/test.dir/onnxrt_vad_gpu_test.c.o: \
  /usr/include/x86_64-linux-gnu/bits/struct_rwlock.h /usr/include/alloca.h \
  /usr/include/x86_64-linux-gnu/bits/stdlib-float.h \
  /usr/include/x86_64-linux-gnu/sys/time.h \
- /home/dylenthomas/Calliope/LARS/LiveASRonRPi-4/include/onnxruntime-linux-x64-gpu-1.23.2/onnxruntime_c_api.h \
+ /home/dylenthomas/LiveASRonRPi-4/include/onnxruntime/onnxruntime_c_api.h \
  /usr/lib/gcc/x86_64-linux-gnu/13/include/stdbool.h \
  /usr/lib/gcc/x86_64-linux-gnu/13/include/stdint.h /usr/include/stdint.h \
  /usr/include/x86_64-linux-gnu/bits/wchar.h \
@@ -59,8 +59,8 @@ CMakeFiles/test.dir/onnxrt_vad_gpu_test.c.o: \
  /usr/include/x86_64-linux-gnu/bits/types/locale_t.h \
  /usr/include/x86_64-linux-gnu/bits/types/__locale_t.h \
  /usr/include/strings.h \
- /home/dylenthomas/Calliope/LARS/LiveASRonRPi-4/include/onnxruntime-linux-x64-gpu-1.23.2/onnxruntime_ep_c_api.h \
- /home/dylenthomas/Calliope/LARS/LiveASRonRPi-4/include/mic_access.h \
+ /home/dylenthomas/LiveASRonRPi-4/include/onnxruntime/onnxruntime_ep_c_api.h \
+ /home/dylenthomas/LiveASRonRPi-4/include/mic_access.h \
  /usr/include/alsa/asoundlib.h /usr/include/unistd.h \
  /usr/include/x86_64-linux-gnu/bits/posix_opt.h \
  /usr/include/x86_64-linux-gnu/bits/environments.h \

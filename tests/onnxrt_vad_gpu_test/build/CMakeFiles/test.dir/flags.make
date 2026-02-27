@@ -4,7 +4,7 @@
 # compile C with /usr/bin/cc
 C_DEFINES = 
 
-C_INCLUDES = -I/home/dylenthomas/Calliope/LARS/LiveASRonRPi-4/tests/onnxrt_vad_gpu_test/test -I/home/dylenthomas/Calliope/LARS/LiveASRonRPi-4/tests/onnxrt_vad_gpu_test/PRIVATE -I/home/dylenthomas/Calliope/LARS/LiveASRonRPi-4/include -I/home/dylenthomas/Calliope/LARS/LiveASRonRPi-4/include/onnxruntime-linux-x64-gpu-1.23.2
+C_INCLUDES = -I/home/dylenthomas/LiveASRonRPi-4/tests/onnxrt_vad_gpu_test/test -I/home/dylenthomas/LiveASRonRPi-4/tests/onnxrt_vad_gpu_test/PRIVATE -I/home/dylenthomas/LiveASRonRPi-4/include -I/home/dylenthomas/LiveASRonRPi-4/include/onnxruntime
 
 C_FLAGS = 
 
