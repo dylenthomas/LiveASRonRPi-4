@@ -34,7 +34,9 @@ struct mic_thread_data {
     snd_pcm_t* device;
     long int updated;
 }
+
 int run_mic_threads = 0;
+int processing_mic_data = 0;
 
 srandom(time(NULL));
 
@@ -72,6 +74,9 @@ void getSpeechProb(
 
 void* readMicData(float* buffer, snd_pcm_t* device, int updated) {
     while (run_mic_threads) {
+        // don't collect audio data if processing the previously collected mic data
+        if (processing_mic_data) { continue; }
+
 	    int16_t tmp_buffer[MIC_BUFFER_LEN] = {0};
 	    int i = 0;
 	
@@ -127,19 +132,15 @@ int findSampleDelay(float* ref_buffer, float* other_buffer)  {
     // The index of the max value represents our delay
     i = 0;
     while (i < n) {
-        float a = Rxy[i].Re;
-        float b = Rxy[m_delay].Re;
-        if (a < 0.0) { a = -a; }
-        if (b < 0.0) { b = -b; }
-
-        if (a > b) { m_delay = i; }
+        // compare absolute values
+        float a = (Rxy[i].Re < 0.0) ? -Rxy[i].Re : Rxy[i].Re;
+        float b = (Rxy[m_delay].Re < 0.0) ? -Rxy[m_delay].Re : Rxy[m_delay].Re;
+        m_delay = (a > b) ? i : m_delay;
     }
-
-    if (m_delay > n/2) { return m - n; }
-    else { return m; }
+    
+    return (m_delay > n/2) ? m - n : m;
 }
 
-// TODO implement auto read onnx model parameters
 int main(int argc, char *argv[]) {
     Py_Initialize();
     PyInit_transcripter();
@@ -273,11 +274,33 @@ int main(int argc, char *argv[]) {
         // wait until both buffers are populated
         if (mic1_last_updated == mic_data[1].updated) { continue; }
         if (mic2_last_updated == mic_data[2].updated) { continue; }
+        // stop collecting mic data for processing
+        processing_mic_data = 1;
+
+        // get the delay of mic2 relative to mic1
+        int delay = findSampleDelay(mic_data[1].buffer, mic_data[2].buffer);
+        if (delay < 0) {
+        // mic2 is ahead of mic1
+            delay = -delay;
+            int x = 0;
+            while (x < MIC_BUFFER_LEN - delay) {
+                combined_buffer[x] = mic_data[1].buffer[x + delay] + mic_data[2].buffer[x];
+            }
+        }
+        else {
+        // mic1 is ahead of mic2
+            int x = 0;
+            while (x < MIC_BUFFER_LEN - delay) {
+                combined_buffer[x] = mic_data[1].buffer[x] + mic_data[2].buffer[x + delay];
+            }
+        }
+        // start collecting mic data 
+        processing_mix_data = 0;
 
 		float* speech_prob = NULL;
         OrtValue** outputs = NULL;
 		
-		getSpeechProb(speech_prob, outputs, num_outputs, ort, ort_session, ort_run_ops, io_binding, alloc);
+		(void)getSpeechProb(speech_prob, outputs, num_outputs, ort, ort_session, ort_run_ops, io_binding, alloc);
         if (speech_prob == NULL) { continue; } // if VAD failed just skip the iteration 
 
         if (*speech_prob > peak_value) {
@@ -313,6 +336,7 @@ int main(int argc, char *argv[]) {
         ort->ReleaseValue(outputs[0]);
         state_tensor = outputs[1];
         outputs[1] = NULL;
+        combined_buffer = {0};
 	}
 	
 // Cleanup for program exit ------------------------------------------------------------------------
