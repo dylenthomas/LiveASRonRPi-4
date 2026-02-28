@@ -6,7 +6,6 @@
  - [x] Incorporate both microphones
  - [ ] Setup threading for each microphone
  - [ ] Figure out how to combine microphones into single stream
-    Use Delay-Sum Beamforming (http://www.labbookpages.co.uk/audio/beamforming/delayCalc.html)
  - [ ] Get python code that runs Whisper working in concert with C code
  - [ ] Combine pieces for a C based transcripter
  - [ ] Roll TCP communication
