@@ -1,0 +1,3 @@
+/home/dylenthomas/LiveASRonRPi-4/src/cbuild/CMakeFiles/main.dir
+/home/dylenthomas/LiveASRonRPi-4/src/cbuild/CMakeFiles/edit_cache.dir
+/home/dylenthomas/LiveASRonRPi-4/src/cbuild/CMakeFiles/rebuild_cache.dir

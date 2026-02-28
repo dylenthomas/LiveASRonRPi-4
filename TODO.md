@@ -3,7 +3,9 @@
  - [x] Try adding peak-hold algorithim
     Try and mimic peak-hold circuit behavoir on the predicted value
     Currently I feel like its moving *too fast* when it resets every iteration
- - [ ] Incorporate both microphones
+ - [x] Incorporate both microphones
+ - [ ] Setup threading for each microphone
+ - [ ] Figure out how to combine microphones into single stream
  - [ ] Get python code that runs Whisper working in concert with C code
  - [ ] Combine pieces for a C based transcripter
  - [ ] Roll TCP communication
