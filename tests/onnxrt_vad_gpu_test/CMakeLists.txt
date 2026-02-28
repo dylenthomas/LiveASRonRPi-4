@@ -21,7 +21,8 @@ include_directories(test PRIVATE
 target_link_libraries(test PRIVATE
     ${ORT_LIB}
     ${ALSA_LIB}
-    ${MIC_LIB} 
+    ${MIC_LIB}
+    m
 )
 
 set_target_properties(test PROPERTIES 

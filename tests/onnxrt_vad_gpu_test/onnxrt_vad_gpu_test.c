@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/time.h>
+#include <math.h>
 
 #include "onnxruntime_c_api.h"
 #include "mic_access.h"
@@ -132,24 +133,23 @@ int main(int argc, char *argv[]) {
 	init_mic(mic1_name, &mic1_ch, sample_rate[0], 1, 512);
 // -------------------------------------------------------------------------------------------------
 	printf("Starting audio collection.\n");
+    double peak_value = 0.0f;
+    int hold_iterations = 5;
+    int iterations_held = 0;
+    double decay_rate = 0.25f;
+    int decay_iterations = 0;
+
 	while (1) {
-        	gettimeofday(&t0, NULL); 
-        	size_t output_count = 2;
-		//OrtValue* outputs[2] = {NULL, NULL};
+        gettimeofday(&t0, NULL); 
+        size_t output_count = 2;
 		OrtValue** outputs = NULL;
-        	OrtValue** outputs_ptr = outputs;
 		read_mic(tmp_buffer, mic1_ch, 512); // read 512 buffer samples
 
 		int i = 0;
 		while (i < 512) { buffer[i] = (float)tmp_buffer[i] / 32768.0f; i++; }
-        	//printf("Collected audio data\n");
        
-        	//printf("Starting inference\n");
-        	if (badStatus(ort->RunWithBinding(session, ort_run_opts, io_binding), ort)) { return 1; } 
-        	//printf("Finished running inference\n");
-        	//printf("Retrieving values from GPU\n");
-        	if (badStatus(ort->GetBoundOutputValues(io_binding, alloc, &outputs, &output_count), ort)) { return 1; }
-        	//printf("Retrieved values\n");
+        if (badStatus(ort->RunWithBinding(session, ort_run_opts, io_binding), ort)) { return 1; } 
+        if (badStatus(ort->GetBoundOutputValues(io_binding, alloc, &outputs, &output_count), ort)) { return 1; }
 
 		// Retrieve probability of speech from the model
 		OrtValue* ort_speech_prob = outputs[0];
@@ -158,9 +158,7 @@ int main(int argc, char *argv[]) {
 			return 1;
 		}
 		float* speech_prob = NULL;
-		//printf("Decoding speech probability\n");
 		if (badStatus(ort->GetTensorMutableData(ort_speech_prob, (void**)&speech_prob), ort)) { return 1; }
-		//printf("Got speech probability\n");
 
 		// release old OrtValues
 		ort->ReleaseValue(state_tensor);
@@ -169,9 +167,22 @@ int main(int argc, char *argv[]) {
 		state_tensor = outputs[1];
 		outputs[1] = NULL;
 
-        	gettimeofday(&t1, NULL);
+        if (speech_prob[0] > peak_value) { // Increase
+            peak_value = speech_prob[0];
+            decay_iterations = 0; 
+        }
+        else if (iterations_held <= hold_iterations) { // Hold
+            iterations_held++; 
+        }
+        else { // Decay
+            iterations_held = 0;
+            peak_value *= exp(-1 * decay_rate * decay_iterations);
+            decay_iterations++;
+        }
+
+        gettimeofday(&t1, NULL);
 		printf("\033[2J\033[H");
-		printf("[%.3f] The probability of speech is: %f\n", timedifference_msec(t0, t1), speech_prob[0]); 	
+		printf("[%.3f] The probability of speech is: %f\n", timedifference_msec(t0, t1), peak_value); 	
     }
 	
 // Cleanup for program exit ------------------------------------------------------------------------

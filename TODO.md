@@ -1,6 +1,6 @@
  - [x] Get VAD working on GPU
     Prediction runs at ~ 500ms (*I think*, I got my time measurement code from Gemini...) 
- - [ ] Try adding peak-hold algorithim
+ - [x] Try adding peak-hold algorithim
     Try and mimic peak-hold circuit behavoir on the predicted value
     Currently I feel like its moving *too fast* when it resets every iteration
  - [ ] Incorporate both microphones
