@@ -2,11 +2,14 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
+#include <pthread.h>
+#include <time.h>
 
 #include "onnxruntime_c_api.h"
 #include "mic_access.h"
 #include "config_parser.h"
 #include "transcripter_api.h"
+#include "fft.h"
 
 #define PROGRAM_CONF "configs/program.json"
 #define KEYWORD_CONF "configs/keywords.json"
@@ -23,6 +26,17 @@
 #define VENDOR_ID 4318
 #define DEVICE_ID 0
 #define GPU_ALIGNMENT 0
+
+#define NUM_THREADS 2
+
+struct mic_thread_data {
+    float* buffer;
+    snd_pcm_t* device;
+    long int updated;
+}
+int run_mic_threads = 0;
+
+srandom(time(NULL));
 
 int badStatus(OrtStatus* status, const OrtApi* ort) {
 	// Make sure the API was accessed correctly 
@@ -56,6 +70,75 @@ void getSpeechProb(
 	*speech_prob = prob_data[0];
 }
 
+void* readMicData(float* buffer, snd_pcm_t* device, int updated) {
+    while (run_mic_threads) {
+	    int16_t tmp_buffer[MIC_BUFFER_LEN] = {0};
+	    int i = 0;
+	
+        read_mic(tmp_buffer, mic1_ch, MIC_BUFFER_LEN);
+        // convert int mic data to float	
+	    while (i < MIC_BUFFER_LEN) { buffer[i] = (float)tmp_buffer[i] / 32768.0f; i++; }
+
+        // tell the main loop the mic buffer is updated by changing updated to random number
+        // want to avoid race condition of both threads updating value at the same time
+        updated = random();
+    }
+
+    return NULL;
+}
+
+int findSampleDelay(float* ref_buffer, float* other_buffer)  {
+    // Find sample delay using frequency domain formula
+    int i = 0;
+    int n = MIC_BUFFER_LEN;
+    int m_delay = 0;
+
+    complex x[n], y[n], tmp[n], Rxy[n];
+
+    while (i < n) {
+        x[i].Re = ref_buffer[i];
+        x[i].Im = 0.0f;
+        y[i].Re = other_buffer[i];
+        y[i].Im = 0.0f;
+    }
+
+    fft(x, n, tmp);
+    fft(y, n, tmp);
+
+    i = 0;
+    while (i < n) { 
+        // compute correlation
+        // the total fomula is the dot product between x and complex conjugate of y
+        //  normalized by the magnitude
+        float a = x[i].Re;
+        float b = x[i].Im;
+        float c = y[i].Re;
+        float d = y[i].Im;
+
+        double m1 = pow((double)(a*c + b*d), 2);
+        double m2 = pow((double)(b*c - a*d), 2);
+        double mag = sqrt(m1 + m2);
+
+        Rxy[i].Re = (a*c + b*d)/mag;
+        Rxy[i].Im = (b*c - a*d)/mag;
+    }
+
+    ifft(Rxy, n, tmp);
+    // The index of the max value represents our delay
+    i = 0;
+    while (i < n) {
+        float a = Rxy[i].Re;
+        float b = Rxy[m_delay].Re;
+        if (a < 0.0) { a = -a; }
+        if (b < 0.0) { b = -b; }
+
+        if (a > b) { m_delay = i; }
+    }
+
+    if (m_delay > n/2) { return m - n; }
+    else { return m; }
+}
+
 // TODO implement auto read onnx model parameters
 int main(int argc, char *argv[]) {
     Py_Initialize();
@@ -85,10 +168,11 @@ int main(int argc, char *argv[]) {
 
 	const int64_t input_data_shape[] = {1, MIC_BUFFER_LEN}; // input data will be the mic buffer
 	const int64_t state_data_shape[] = {2, 1, 128};	
-
-	int16_t tmp_buffer[MIC_BUFFER_LEN] = {0};
+	
+    float mic1_buffer[MIC_BUFFER_LEN] = {0};
+    float mic2_buffer[MIC_BUFFER_LEN] = {0};
+    float combined_buffer[MIC_BUFFER_LEN] = {0};
     float long_buffer[SAMPLE_RATE * LONGEST_TRANSCRIPT] = {0};
-	float buffer[MIC_BUFFER_LEN] = {0};
 	float initial_state[STATE_LEN] = {0};
 
 	OrtValue* input_tensor = NULL;
@@ -138,7 +222,7 @@ int main(int argc, char *argv[]) {
 		ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT, &state_tensor), ort)) { return 1; }
 
 	if (badStatus(ort->CreateTensorWithDataAsOrtValue(
-		gpu_mem_info, buffer, sizeof(buffer), input_data_shape, INPUT_DIMS, 
+		gpu_mem_info, combined_buffer, sizeof(buffer), input_data_shape, INPUT_DIMS, 
 		ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT, &input_tensor), ort)) { return 1; }
 
     OrtIoBinding* io_binding = NULL;
@@ -158,17 +242,40 @@ int main(int argc, char *argv[]) {
 
     snd_pcm_t* mic2_ch;
     init_mic(mic2_name, &mic2_ch, SAMPLE_RATE, CHANNELS, MIC_BUFFER_LEN);
+
+    struct mic_thread_data mic_data[2];
+
+    mic_data[1].buffer = mic1_buffer;
+    mic_data[1].device = mic1_ch;
+    mic_data[1].updated = 0L;
+    mic_data[2].buffer = mic2_buffer;
+    mic_data[2].device = mic2_ch;
+    mic_data[2].updated = 0L;
 // -------------------------------------------------------------------------------------------------
 	printf("Starting audio collection.\n");
+
+    pthread_t thread[NUM_THREADS];
+    run_mic_threads = 1;
+
+    if ((int ret = pthread_create(&thread[1], NULL, readMicData, &mic_data[1])) != 0) { 
+        printf(stderr, "Error: failed to create thread 1 %d", ret);
+        return 1; 
+    }
+    if ((int ret = pthread_create(&thread[2], NULL, readMicData, &mic_data[2])) != 0) { 
+        printf(stderr, "Error: failed to create thread 2 %d", ret);
+        return 1; 
+    }
+
+    long int mic1_last_updated = mic_data[1].updated;
+    long int mic2_last_updated = mic_data[2].updated;
     
     while (1) {
+        // wait until both buffers are populated
+        if (mic1_last_updated == mic_data[1].updated) { continue; }
+        if (mic2_last_updated == mic_data[2].updated) { continue; }
+
 		float* speech_prob = NULL;
         OrtValue** outputs = NULL;
-	
-		int i = 0;
-		read_mic(tmp_buffer, mic1_ch, MIC_BUFFER_LEN);
-        // convert int mic data to float	
-		while (i < MIC_BUFFER_LEN) { buffer[i] = (float)tmp_buffer[i] / 32768.0f; i++; }
 		
 		getSpeechProb(speech_prob, outputs, num_outputs, ort, ort_session, ort_run_ops, io_binding, alloc);
         if (speech_prob == NULL) { continue; } // if VAD failed just skip the iteration 
