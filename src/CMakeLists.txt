@@ -8,6 +8,7 @@ set(ORT_LIB_DIR "${LIBS}/onnxruntime")
 
 find_library(ORT_LIB onnxruntime PATHS ${ORT_LIB_DIR} NO_DEFAULT_PATH REQUIRED)
 find_library(MIC_LIB mic_access PATHS ${LIBS} NO_DEFAULT_PATH REQUIRED)
+find_library(FFT_LIB fft PATHS ${LIBS} NO_DEFAULT_PATH REQUIRED)
 find_library(ALSA_LIB asound REQUIRED)
 
 add_executable(main main.c)
@@ -22,6 +23,7 @@ target_link_libraries(main PRIVATE
     ${ORT_LIB}
     ${ALSA_LIB}
     ${MIC_LIB}
+    ${FFT_LIB}
     m
 )
 
