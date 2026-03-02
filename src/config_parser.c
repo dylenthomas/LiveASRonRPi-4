@@ -1,6 +1,6 @@
 #include <string.h>
 
-#include "keywordConfParser.h"
+#include "config_parser.h"
 
 /*
  * JSON Parser for the keywords JSON config

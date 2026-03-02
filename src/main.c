@@ -11,7 +11,6 @@
 #include "transcripter_api.h"
 #include "fft.h"
 
-#define PROGRAM_CONF "configs/program.json"
 #define KEYWORD_CONF "configs/keywords.json"
 #define MIC_BUFFER_LEN 512 
 #define SAMPLE_RATE 16000
@@ -21,7 +20,7 @@
 #define STATE_LEN 2 * 1 * 128
 #define SAMPLE_RATE_DIMS 1
 #define INPUT_DIMS 2
-#define STATE DIMS 3
+#define STATE_DIMS 3
 
 #define VENDOR_ID 4318
 #define DEVICE_ID 0
@@ -32,13 +31,11 @@
 struct mic_thread_data {
     float* buffer;
     snd_pcm_t* device;
-    long int updated;
-}
+    long int* updated;
+};
 
 int run_mic_threads = 0;
 int processing_mic_data = 0;
-
-srandom(time(NULL));
 
 int badStatus(OrtStatus* status, const OrtApi* ort) {
 	// Make sure the API was accessed correctly 
@@ -72,7 +69,9 @@ void getSpeechProb(
 	*speech_prob = prob_data[0];
 }
 
-void* readMicData(float* buffer, snd_pcm_t* device, int updated) {
+void* readMicData(void* ptr) {
+    struct mic_thread_data* args = (struct mic_thread_data*)ptr;
+
     while (run_mic_threads) {
         // don't collect audio data if processing the previously collected mic data
         if (processing_mic_data) { continue; }
@@ -80,13 +79,13 @@ void* readMicData(float* buffer, snd_pcm_t* device, int updated) {
 	    int16_t tmp_buffer[MIC_BUFFER_LEN] = {0};
 	    int i = 0;
 	
-        read_mic(tmp_buffer, mic1_ch, MIC_BUFFER_LEN);
+        read_mic(tmp_buffer, args->device, MIC_BUFFER_LEN);
         // convert int mic data to float	
-	    while (i < MIC_BUFFER_LEN) { buffer[i] = (float)tmp_buffer[i] / 32768.0f; i++; }
+	    while (i < MIC_BUFFER_LEN) { args->buffer[i] = (float)tmp_buffer[i] / 32768.0f; i++; }
 
         // tell the main loop the mic buffer is updated by changing updated to random number
         // want to avoid race condition of both threads updating value at the same time
-        updated = random();
+        *(args->updated) = random();
     }
 
     return NULL;
@@ -138,20 +137,21 @@ int findSampleDelay(float* ref_buffer, float* other_buffer)  {
         m_delay = (a > b) ? i : m_delay;
     }
     
-    return (m_delay > n/2) ? m - n : m;
+    return (m_delay > n/2) ? m_delay - n : m_delay;
 }
 
 int main(int argc, char *argv[]) {
-    Py_Initialize();
-    PyInit_transcripter();
+    srandom(time(NULL));
+
+    Py_Initialize(); 
+    import_transcripter();
 
 	if (argc != 4) { printf("Args should be: VAD Model Path, Mic1 Name, Mic2 Name\n"); return 0; }
 	const char* vad_model_path = argv[1];
 	const char* mic1_name = argv[2];
     const char* mic2_name = argv[3];
 
-    const struct keywordHM keywords;
-    keywords = createKeywordHM(KEYWORD_CONF);
+    struct keywordHM keywords = createKeywordHM(KEYWORD_CONF);
 
 	const float speech_threshold = 0.7; // trigger threshold to start transcription
     size_t num_outputs = 2;
@@ -164,12 +164,14 @@ int main(int argc, char *argv[]) {
 
     int transcript_buffers = 0;
 	
-    const int64_t sample_rate[] = {SAMPLE_RATE};
+    int64_t sample_rate[] = {SAMPLE_RATE};
 	const int64_t sample_rate_shape[] = {1};
 
 	const int64_t input_data_shape[] = {1, MIC_BUFFER_LEN}; // input data will be the mic buffer
 	const int64_t state_data_shape[] = {2, 1, 128};	
-	
+
+    long int updated1 = 0L;
+    long int updated2 = 0L;
     float mic1_buffer[MIC_BUFFER_LEN] = {0};
     float mic2_buffer[MIC_BUFFER_LEN] = {0};
     float combined_buffer[MIC_BUFFER_LEN] = {0};
@@ -179,6 +181,10 @@ int main(int argc, char *argv[]) {
 	OrtValue* input_tensor = NULL;
 	OrtValue* state_tensor = NULL;
 	OrtValue* sr_tensor = NULL;
+
+    int ret;
+    long int mic1_last_updated;
+    long int mic2_last_updated;
 // Initialize the ORT Api --------------------------------------------------------------------------
 	printf("Initializing ORT...\n");
 	const OrtApi* ort = OrtGetApiBase()->GetApi(ORT_API_VERSION);
@@ -223,11 +229,11 @@ int main(int argc, char *argv[]) {
 		ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT, &state_tensor), ort)) { return 1; }
 
 	if (badStatus(ort->CreateTensorWithDataAsOrtValue(
-		gpu_mem_info, combined_buffer, sizeof(buffer), input_data_shape, INPUT_DIMS, 
+		gpu_mem_info, combined_buffer, sizeof(combined_buffer), input_data_shape, INPUT_DIMS, 
 		ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT, &input_tensor), ort)) { return 1; }
 
     OrtIoBinding* io_binding = NULL;
-    if (badStatus(ort->CreateIoBinding(session, &io_binding), ort)) { return 1; }
+    if (badStatus(ort->CreateIoBinding(ort_session, &io_binding), ort)) { return 1; }
 
     if (badStatus(ort->BindInput(io_binding, "input", input_tensor), ort)) { return 1; }
     if (badStatus(ort->BindInput(io_binding, "state", state_tensor), ort)) { return 1; }
@@ -236,6 +242,8 @@ int main(int argc, char *argv[]) {
     if (badStatus(ort->BindOutputToDevice(io_binding, "stateN", cpu_mem_info), ort)) { return 1; }
 // -------------------------------------------------------------------------------------------------
 // Initialize Microphone ---------------------------------------------------------------------------
+    int i;
+
 	printf("Initializing microphones...\n");
 
 	snd_pcm_t* mic1_ch;
@@ -248,32 +256,35 @@ int main(int argc, char *argv[]) {
 
     mic_data[1].buffer = mic1_buffer;
     mic_data[1].device = mic1_ch;
-    mic_data[1].updated = 0L;
+    mic_data[1].updated = &updated1;
     mic_data[2].buffer = mic2_buffer;
     mic_data[2].device = mic2_ch;
-    mic_data[2].updated = 0L;
+    mic_data[2].updated = &updated2;
 // -------------------------------------------------------------------------------------------------
 	printf("Starting audio collection.\n");
 
     pthread_t thread[NUM_THREADS];
     run_mic_threads = 1;
 
-    if ((int ret = pthread_create(&thread[1], NULL, readMicData, &mic_data[1])) != 0) { 
-        printf(stderr, "Error: failed to create thread 1 %d", ret);
+    if ((ret = pthread_create(&thread[1], NULL, readMicData, &mic_data[1])) != 0) { 
+        fprintf(stderr, "Error: failed to create thread 1 %d", ret);
         return 1; 
     }
-    if ((int ret = pthread_create(&thread[2], NULL, readMicData, &mic_data[2])) != 0) { 
-        printf(stderr, "Error: failed to create thread 2 %d", ret);
+    if ((ret = pthread_create(&thread[2], NULL, readMicData, &mic_data[2])) != 0) { 
+        fprintf(stderr, "Error: failed to create thread 2 %d", ret);
         return 1; 
     }
 
-    long int mic1_last_updated = mic_data[1].updated;
-    long int mic2_last_updated = mic_data[2].updated;
+    mic1_last_updated = *mic_data[1].updated;
+    mic2_last_updated = *mic_data[2].updated;
     
     while (1) {
         // wait until both buffers are populated
-        if (mic1_last_updated == mic_data[1].updated) { continue; }
-        if (mic2_last_updated == mic_data[2].updated) { continue; }
+        if (mic1_last_updated == *mic_data[1].updated) { continue; }
+        mic1_last_updated = *mic_data[1].updated;
+        if (mic2_last_updated == *mic_data[2].updated) { continue; }
+        mic2_last_updated = *mic_data[2].updated;
+
         // stop collecting mic data for processing
         processing_mic_data = 1;
 
@@ -295,12 +306,12 @@ int main(int argc, char *argv[]) {
             }
         }
         // start collecting mic data 
-        processing_mix_data = 0;
+        processing_mic_data = 0;
 
 		float* speech_prob = NULL;
         OrtValue** outputs = NULL;
 		
-		(void)getSpeechProb(speech_prob, outputs, num_outputs, ort, ort_session, ort_run_ops, io_binding, alloc);
+		(void)getSpeechProb(speech_prob, outputs, num_outputs, ort, ort_session, ort_run_opts, io_binding, alloc);
         if (speech_prob == NULL) { continue; } // if VAD failed just skip the iteration 
 
         if (*speech_prob > peak_value) {
@@ -321,13 +332,17 @@ int main(int argc, char *argv[]) {
 
         if (peak_value >= speech_threshold) {
             i = 0;
-            while (i < MIC_BUFFER_LEN) { long_buffer[i + MIC_BUFFER_LEN * transcript_buffers] = buffer[i]; i++; }
+            while (i < MIC_BUFFER_LEN) { 
+                long_buffer[i + MIC_BUFFER_LEN * transcript_buffers] = combined_buffer[i]; 
+                i++; 
+            }
             transcript_buffers++;
         }
         else if (transcript_buffers) {
             // transcribe
 
-            long_buffer = {0};
+            i = 0;
+            while (i < SAMPLE_RATE * LONGEST_TRANSCRIPT) { long_buffer[i] = 0.0f; }
             transcript_buffers = 0;
         }
 
@@ -336,7 +351,9 @@ int main(int argc, char *argv[]) {
         ort->ReleaseValue(outputs[0]);
         state_tensor = outputs[1];
         outputs[1] = NULL;
-        combined_buffer = {0};
+        
+        i = 0;
+        while (i < MIC_BUFFER_LEN) { combined_buffer[i] = 0.0f; } 
 	}
 	
 // Cleanup for program exit ------------------------------------------------------------------------
