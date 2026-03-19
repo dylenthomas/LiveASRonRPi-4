@@ -4,6 +4,7 @@
 #include <math.h>
 #include <pthread.h>
 #include <time.h>
+#include <signal.h>
 
 #include "onnxruntime_c_api.h"
 #include "mic_access.h"
@@ -27,6 +28,11 @@
 #define GPU_ALIGNMENT 0
 
 #define NUM_THREADS 2
+
+static volatile int keep_running = 1;
+void intHandler(int dummy) {
+    keep_running = 0;
+}
 
 struct mic_thread_data {
     float* buffer;
@@ -141,6 +147,7 @@ int findSampleDelay(float* ref_buffer, float* other_buffer)  {
 }
 
 int main(int argc, char *argv[]) {
+    signal(SIGINT, intHandler);
     srandom(time(NULL));
 
     Py_Initialize(); 
@@ -151,7 +158,7 @@ int main(int argc, char *argv[]) {
 	const char* mic1_name = argv[2];
     const char* mic2_name = argv[3];
 
-    struct keywordHM keywords = createKeywordHM(KEYWORD_CONF);
+    //struct keywordHM keywords = createKeywordHM(KEYWORD_CONF);
 
 	const float speech_threshold = 0.7; // trigger threshold to start transcription
     size_t num_outputs = 2;
@@ -270,26 +277,34 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "Error: failed to create thread 1 %d", ret);
         return 1; 
     }
+    printf("Started mic1 thread.\n");
+
     if ((ret = pthread_create(&thread[2], NULL, readMicData, &mic_data[2])) != 0) { 
         fprintf(stderr, "Error: failed to create thread 2 %d", ret);
         return 1; 
     }
+    printf("Started mic2 thread.\n");
 
     mic1_last_updated = *mic_data[1].updated;
     mic2_last_updated = *mic_data[2].updated;
     
-    while (1) {
+    while (keep_running) {
         // wait until both buffers are populated
         if (mic1_last_updated == *mic_data[1].updated) { continue; }
         mic1_last_updated = *mic_data[1].updated;
+        printf("mic1 updated\n");
+
         if (mic2_last_updated == *mic_data[2].updated) { continue; }
         mic2_last_updated = *mic_data[2].updated;
+        printf("mic2 updated\n");
 
         // stop collecting mic data for processing
         processing_mic_data = 1;
 
         // get the delay of mic2 relative to mic1
         int delay = findSampleDelay(mic_data[1].buffer, mic_data[2].buffer);
+        printf("Microphone delay is %d\n", delay);
+
         if (delay < 0) {
         // mic2 is ahead of mic1
             delay = -delay;
@@ -305,6 +320,8 @@ int main(int argc, char *argv[]) {
                 combined_buffer[x] = mic_data[1].buffer[x] + mic_data[2].buffer[x + delay];
             }
         }
+        pritnf("Microphone data has been combined\n");
+
         // start collecting mic data 
         processing_mic_data = 0;
 
@@ -313,7 +330,9 @@ int main(int argc, char *argv[]) {
 		
 		(void)getSpeechProb(speech_prob, outputs, num_outputs, ort, ort_session, ort_run_opts, io_binding, alloc);
         if (speech_prob == NULL) { continue; } // if VAD failed just skip the iteration 
-
+        
+        printf("%.2f", *speech_prob);
+        
         if (*speech_prob > peak_value) {
         // Increase
             peak_value = *speech_prob;
@@ -357,6 +376,8 @@ int main(int argc, char *argv[]) {
 	}
 	
 // Cleanup for program exit ------------------------------------------------------------------------
+    printf("cleaning up..\n");
+
 	ort->ReleaseMemoryInfo(cpu_mem_info);
     ort->ReleaseMemoryInfo(gpu_mem_info);
     ort->ReleaseIoBinding(io_binding);

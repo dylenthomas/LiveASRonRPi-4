@@ -164,6 +164,7 @@ CMakeFiles/main.dir/main.c.o: /home/dylenthomas/LiveASRonRPi-4/src/main.c \
   /usr/include/python3.12/warnings.h \
   /usr/include/python3.12/weakrefobject.h \
   /usr/include/sched.h \
+  /usr/include/signal.h \
   /usr/include/stdc-predef.h \
   /usr/include/stdint.h \
   /usr/include/stdio.h \
@@ -214,6 +215,19 @@ CMakeFiles/main.dir/main.c.o: /home/dylenthomas/LiveASRonRPi-4/src/main.c \
   /usr/include/x86_64-linux-gnu/bits/sched.h \
   /usr/include/x86_64-linux-gnu/bits/select.h \
   /usr/include/x86_64-linux-gnu/bits/setjmp.h \
+  /usr/include/x86_64-linux-gnu/bits/sigaction.h \
+  /usr/include/x86_64-linux-gnu/bits/sigcontext.h \
+  /usr/include/x86_64-linux-gnu/bits/sigevent-consts.h \
+  /usr/include/x86_64-linux-gnu/bits/siginfo-arch.h \
+  /usr/include/x86_64-linux-gnu/bits/siginfo-consts-arch.h \
+  /usr/include/x86_64-linux-gnu/bits/siginfo-consts.h \
+  /usr/include/x86_64-linux-gnu/bits/signal_ext.h \
+  /usr/include/x86_64-linux-gnu/bits/signum-arch.h \
+  /usr/include/x86_64-linux-gnu/bits/signum-generic.h \
+  /usr/include/x86_64-linux-gnu/bits/sigstack.h \
+  /usr/include/x86_64-linux-gnu/bits/sigstksz.h \
+  /usr/include/x86_64-linux-gnu/bits/sigthread.h \
+  /usr/include/x86_64-linux-gnu/bits/ss_flags.h \
   /usr/include/x86_64-linux-gnu/bits/stat.h \
   /usr/include/x86_64-linux-gnu/bits/statx-generic.h \
   /usr/include/x86_64-linux-gnu/bits/statx.h \
@@ -238,18 +252,25 @@ CMakeFiles/main.dir/main.c.o: /home/dylenthomas/LiveASRonRPi-4/src/main.c \
   /usr/include/x86_64-linux-gnu/bits/types/__locale_t.h \
   /usr/include/x86_64-linux-gnu/bits/types/__mbstate_t.h \
   /usr/include/x86_64-linux-gnu/bits/types/__sigset_t.h \
+  /usr/include/x86_64-linux-gnu/bits/types/__sigval_t.h \
   /usr/include/x86_64-linux-gnu/bits/types/clock_t.h \
   /usr/include/x86_64-linux-gnu/bits/types/clockid_t.h \
   /usr/include/x86_64-linux-gnu/bits/types/cookie_io_functions_t.h \
   /usr/include/x86_64-linux-gnu/bits/types/error_t.h \
   /usr/include/x86_64-linux-gnu/bits/types/locale_t.h \
   /usr/include/x86_64-linux-gnu/bits/types/mbstate_t.h \
+  /usr/include/x86_64-linux-gnu/bits/types/sig_atomic_t.h \
+  /usr/include/x86_64-linux-gnu/bits/types/sigevent_t.h \
+  /usr/include/x86_64-linux-gnu/bits/types/siginfo_t.h \
   /usr/include/x86_64-linux-gnu/bits/types/sigset_t.h \
+  /usr/include/x86_64-linux-gnu/bits/types/sigval_t.h \
+  /usr/include/x86_64-linux-gnu/bits/types/stack_t.h \
   /usr/include/x86_64-linux-gnu/bits/types/struct_FILE.h \
   /usr/include/x86_64-linux-gnu/bits/types/struct___jmp_buf_tag.h \
   /usr/include/x86_64-linux-gnu/bits/types/struct_iovec.h \
   /usr/include/x86_64-linux-gnu/bits/types/struct_itimerspec.h \
   /usr/include/x86_64-linux-gnu/bits/types/struct_sched_param.h \
+  /usr/include/x86_64-linux-gnu/bits/types/struct_sigstack.h \
   /usr/include/x86_64-linux-gnu/bits/types/struct_statx.h \
   /usr/include/x86_64-linux-gnu/bits/types/struct_statx_timestamp.h \
   /usr/include/x86_64-linux-gnu/bits/types/struct_timespec.h \
@@ -276,6 +297,7 @@ CMakeFiles/main.dir/main.c.o: /home/dylenthomas/LiveASRonRPi-4/src/main.c \
   /usr/include/x86_64-linux-gnu/sys/stat.h \
   /usr/include/x86_64-linux-gnu/sys/time.h \
   /usr/include/x86_64-linux-gnu/sys/types.h \
+  /usr/include/x86_64-linux-gnu/sys/ucontext.h \
   /usr/lib/gcc/x86_64-linux-gnu/13/include/limits.h \
   /usr/lib/gcc/x86_64-linux-gnu/13/include/stdarg.h \
   /usr/lib/gcc/x86_64-linux-gnu/13/include/stdbool.h \
@@ -286,9 +308,9 @@ CMakeFiles/main.dir/main.c.o: /home/dylenthomas/LiveASRonRPi-4/src/main.c \
 
 /usr/lib/gcc/x86_64-linux-gnu/13/include/stdint.h:
 
-/usr/lib/gcc/x86_64-linux-gnu/13/include/stdarg.h:
-
 /usr/lib/gcc/x86_64-linux-gnu/13/include/limits.h:
+
+/usr/include/x86_64-linux-gnu/sys/ucontext.h:
 
 /usr/include/x86_64-linux-gnu/sys/time.h:
 
@@ -322,6 +344,22 @@ CMakeFiles/main.dir/main.c.o: /home/dylenthomas/LiveASRonRPi-4/src/main.c \
 
 /usr/include/x86_64-linux-gnu/bits/typesizes.h:
 
+/usr/include/x86_64-linux-gnu/bits/types/wint_t.h:
+
+/usr/include/x86_64-linux-gnu/bits/types/time_t.h:
+
+/usr/include/x86_64-linux-gnu/bits/types/struct_tm.h:
+
+/usr/include/x86_64-linux-gnu/bits/types/struct_iovec.h:
+
+/usr/include/x86_64-linux-gnu/bits/types/stack_t.h:
+
+/usr/include/x86_64-linux-gnu/bits/types/sigval_t.h:
+
+/usr/include/x86_64-linux-gnu/bits/types/sigevent_t.h:
+
+/usr/include/x86_64-linux-gnu/bits/types/mbstate_t.h:
+
 /usr/include/python3.12/methodobject.h:
 
 /usr/include/alsa/seq_midi_event.h:
@@ -333,6 +371,10 @@ CMakeFiles/main.dir/main.c.o: /home/dylenthomas/LiveASRonRPi-4/src/main.c \
 /usr/include/python3.12/iterobject.h:
 
 /usr/include/features-time64.h:
+
+/usr/include/x86_64-linux-gnu/bits/types/struct_timeval.h:
+
+/usr/include/poll.h:
 
 /usr/include/python3.12/genericaliasobject.h:
 
@@ -347,6 +389,10 @@ CMakeFiles/main.dir/main.c.o: /home/dylenthomas/LiveASRonRPi-4/src/main.c \
 /usr/include/x86_64-linux-gnu/bits/long-double.h:
 
 /usr/include/python3.12/cpython/weakrefobject.h:
+
+/usr/include/x86_64-linux-gnu/bits/types/struct_statx_timestamp.h:
+
+/usr/include/python3.12/cpython/unicodeobject.h:
 
 /usr/include/x86_64-linux-gnu/bits/local_lim.h:
 
@@ -376,8 +422,6 @@ CMakeFiles/main.dir/main.c.o: /home/dylenthomas/LiveASRonRPi-4/src/main.c \
 
 /usr/include/python3.12/memoryobject.h:
 
-/usr/include/x86_64-linux-gnu/bits/types/time_t.h:
-
 /usr/include/x86_64-linux-gnu/bits/waitflags.h:
 
 /usr/include/python3.12/cpython/objimpl.h:
@@ -402,6 +446,8 @@ CMakeFiles/main.dir/main.c.o: /home/dylenthomas/LiveASRonRPi-4/src/main.c \
 
 /usr/include/python3.12/setobject.h:
 
+/usr/include/x86_64-linux-gnu/bits/sigevent-consts.h:
+
 /usr/include/python3.12/cpython/import.h:
 
 /usr/include/python3.12/cpython/compile.h:
@@ -410,17 +456,15 @@ CMakeFiles/main.dir/main.c.o: /home/dylenthomas/LiveASRonRPi-4/src/main.c \
 
 /usr/include/python3.12/codecs.h:
 
+/usr/include/x86_64-linux-gnu/bits/types/struct_statx.h:
+
+/usr/include/python3.12/pybuffer.h:
+
 /usr/include/asm-generic/errno-base.h:
 
 /usr/include/python3.12/cpython/complexobject.h:
 
-/usr/include/alsa/seq.h:
-
 /usr/include/python3.12/cpython/object.h:
-
-/usr/include/poll.h:
-
-/usr/include/x86_64-linux-gnu/bits/types/struct_timeval.h:
 
 /usr/include/python3.12/bytesobject.h:
 
@@ -429,6 +473,8 @@ CMakeFiles/main.dir/main.c.o: /home/dylenthomas/LiveASRonRPi-4/src/main.c \
 /usr/include/wchar.h:
 
 /usr/include/x86_64-linux-gnu/bits/endian.h:
+
+/usr/include/x86_64-linux-gnu/bits/types/siginfo_t.h:
 
 /usr/include/python3.12/intrcheck.h:
 
@@ -447,6 +493,8 @@ CMakeFiles/main.dir/main.c.o: /home/dylenthomas/LiveASRonRPi-4/src/main.c \
 /usr/include/python3.12/fileobject.h:
 
 /usr/include/python3.12/cpython/pydebug.h:
+
+/usr/include/x86_64-linux-gnu/bits/types/struct_sigstack.h:
 
 /usr/include/x86_64-linux-gnu/bits/types/__locale_t.h:
 
@@ -474,6 +522,14 @@ CMakeFiles/main.dir/main.c.o: /home/dylenthomas/LiveASRonRPi-4/src/main.c \
 
 /home/dylenthomas/LiveASRonRPi-4/include/onnxruntime/onnxruntime_ep_c_api.h:
 
+/usr/include/x86_64-linux-gnu/bits/types/sigset_t.h:
+
+/usr/include/asm-generic/types.h:
+
+/usr/include/asm-generic/bitsperlong.h:
+
+/usr/include/alsa/global.h:
+
 /usr/include/python3.12/floatobject.h:
 
 /usr/include/alsa/timer.h:
@@ -482,10 +538,6 @@ CMakeFiles/main.dir/main.c.o: /home/dylenthomas/LiveASRonRPi-4/src/main.c \
 
 /usr/include/python3.12/cpython/ceval.h:
 
-/usr/include/python3.12/pybuffer.h:
-
-/usr/include/x86_64-linux-gnu/bits/types/struct_statx.h:
-
 /usr/include/alsa/mixer.h:
 
 /usr/include/x86_64-linux-gnu/bits/fcntl.h:
@@ -493,10 +545,6 @@ CMakeFiles/main.dir/main.c.o: /home/dylenthomas/LiveASRonRPi-4/src/main.c \
 /usr/include/linux/posix_types.h:
 
 /usr/include/x86_64-linux-gnu/bits/flt-eval-method.h:
-
-/usr/include/python3.12/cpython/unicodeobject.h:
-
-/usr/include/x86_64-linux-gnu/bits/types/struct_statx_timestamp.h:
 
 /usr/include/x86_64-linux-gnu/bits/types/__fpos64_t.h:
 
@@ -511,8 +559,6 @@ CMakeFiles/main.dir/main.c.o: /home/dylenthomas/LiveASRonRPi-4/src/main.c \
 /usr/include/alsa/version.h:
 
 /usr/include/alsa/error.h:
-
-/usr/include/alsa/ump.h:
 
 /usr/include/asm-generic/posix_types.h:
 
@@ -552,6 +598,8 @@ CMakeFiles/main.dir/main.c.o: /home/dylenthomas/LiveASRonRPi-4/src/main.c \
 
 /usr/include/errno.h:
 
+/usr/include/x86_64-linux-gnu/bits/types/__sigval_t.h:
+
 /usr/include/python3.12/cpython/modsupport.h:
 
 /usr/include/python3.12/cpython/dictobject.h:
@@ -563,6 +611,8 @@ CMakeFiles/main.dir/main.c.o: /home/dylenthomas/LiveASRonRPi-4/src/main.c \
 /usr/include/python3.12/objimpl.h:
 
 /usr/include/python3.12/patchlevel.h:
+
+/usr/include/signal.h:
 
 /usr/include/strings.h:
 
@@ -593,6 +643,8 @@ CMakeFiles/main.dir/main.c.o: /home/dylenthomas/LiveASRonRPi-4/src/main.c \
 /usr/include/python3.12/bltinmodule.h:
 
 /usr/include/python3.12/pymath.h:
+
+/usr/include/x86_64-linux-gnu/bits/signum-arch.h:
 
 /usr/include/x86_64-linux-gnu/bits/errno.h:
 
@@ -642,19 +694,19 @@ CMakeFiles/main.dir/main.c.o: /home/dylenthomas/LiveASRonRPi-4/src/main.c \
 
 /usr/include/x86_64-linux-gnu/bits/floatn-common.h:
 
-/usr/include/x86_64-linux-gnu/bits/types/wint_t.h:
-
 /usr/include/python3.12/osmodule.h:
 
-/usr/include/x86_64-linux-gnu/bits/stat.h:
+/usr/lib/gcc/x86_64-linux-gnu/13/include/stdarg.h:
+
+/usr/include/x86_64-linux-gnu/bits/siginfo-consts.h:
+
+/usr/include/x86_64-linux-gnu/bits/sigcontext.h:
 
 /usr/include/x86_64-linux-gnu/bits/thread-shared-types.h:
 
 /usr/include/python3.12/pyerrors.h:
 
 /usr/include/x86_64-linux-gnu/bits/stdint-least.h:
-
-/usr/include/x86_64-linux-gnu/bits/types/mbstate_t.h:
 
 /usr/include/python3.12/cpython/methodobject.h:
 
@@ -668,11 +720,19 @@ CMakeFiles/main.dir/main.c.o: /home/dylenthomas/LiveASRonRPi-4/src/main.c \
 
 /usr/include/python3.12/pymacro.h:
 
+/usr/include/x86_64-linux-gnu/bits/types/timer_t.h:
+
+/usr/include/python3.12/pystate.h:
+
+/usr/include/python3.12/pymem.h:
+
 /usr/include/x86_64-linux-gnu/bits/iscanonical.h:
 
 /usr/include/python3.12/pyport.h:
 
 /usr/include/x86_64-linux-gnu/bits/byteswap.h:
+
+/usr/include/x86_64-linux-gnu/bits/siginfo-consts-arch.h:
 
 /usr/include/stdc-predef.h:
 
@@ -688,11 +748,13 @@ CMakeFiles/main.dir/main.c.o: /home/dylenthomas/LiveASRonRPi-4/src/main.c \
 
 /usr/include/python3.12/pytypedefs.h:
 
-/usr/include/python3.12/pystate.h:
+/usr/include/x86_64-linux-gnu/bits/types/struct_itimerspec.h:
 
-/usr/include/python3.12/pymem.h:
+/usr/include/python3.12/sliceobject.h:
 
-/usr/include/x86_64-linux-gnu/bits/types/timer_t.h:
+/usr/include/alsa/seq.h:
+
+/usr/include/x86_64-linux-gnu/bits/signum-generic.h:
 
 /usr/include/alsa/seq_event.h:
 
@@ -726,6 +788,10 @@ CMakeFiles/main.dir/main.c.o: /home/dylenthomas/LiveASRonRPi-4/src/main.c \
 
 /usr/include/stdlib.h:
 
+/usr/include/x86_64-linux-gnu/bits/types/struct_timespec.h:
+
+/usr/include/x86_64-linux-gnu/bits/stdint-uintn.h:
+
 /usr/include/x86_64-linux-gnu/asm/bitsperlong.h:
 
 /usr/include/x86_64-linux-gnu/bits/pthreadtypes-arch.h:
@@ -735,6 +801,8 @@ CMakeFiles/main.dir/main.c.o: /home/dylenthomas/LiveASRonRPi-4/src/main.c \
 /usr/include/x86_64-linux-gnu/asm/types.h:
 
 /usr/include/x86_64-linux-gnu/bits/confname.h:
+
+/usr/include/x86_64-linux-gnu/bits/siginfo-arch.h:
 
 /usr/include/x86_64-linux-gnu/asm/posix_types_64.h:
 
@@ -747,10 +815,6 @@ CMakeFiles/main.dir/main.c.o: /home/dylenthomas/LiveASRonRPi-4/src/main.c \
 /usr/include/x86_64-linux-gnu/bits/environments.h:
 
 /usr/include/x86_64-linux-gnu/bits/floatn.h:
-
-/usr/include/python3.12/sliceobject.h:
-
-/usr/include/x86_64-linux-gnu/bits/types/struct_itimerspec.h:
 
 /usr/include/x86_64-linux-gnu/bits/fp-fast.h:
 
@@ -798,6 +862,26 @@ CMakeFiles/main.dir/main.c.o: /home/dylenthomas/LiveASRonRPi-4/src/main.c \
 
 /usr/include/x86_64-linux-gnu/bits/struct_stat.h:
 
+/usr/include/alsa/ump.h:
+
+/usr/include/x86_64-linux-gnu/bits/sigaction.h:
+
+/usr/include/x86_64-linux-gnu/bits/signal_ext.h:
+
+/usr/include/x86_64-linux-gnu/bits/sigstack.h:
+
+/usr/include/x86_64-linux-gnu/bits/stat.h:
+
+/usr/include/x86_64-linux-gnu/bits/sigstksz.h:
+
+/usr/include/x86_64-linux-gnu/bits/sigthread.h:
+
+/usr/include/x86_64-linux-gnu/bits/types/sig_atomic_t.h:
+
+/usr/include/x86_64-linux-gnu/bits/ss_flags.h:
+
+/usr/include/x86_64-linux-gnu/bits/stdlib-float.h:
+
 /usr/include/python3.12/pystrcmp.h:
 
 /usr/include/unistd.h:
@@ -807,8 +891,6 @@ CMakeFiles/main.dir/main.c.o: /home/dylenthomas/LiveASRonRPi-4/src/main.c \
 /usr/include/x86_64-linux-gnu/bits/stdint-intn.h:
 
 /usr/include/x86_64-linux-gnu/bits/types.h:
-
-/usr/include/x86_64-linux-gnu/bits/stdlib-float.h:
 
 /usr/include/python3.12/typeslots.h:
 
@@ -824,24 +906,8 @@ CMakeFiles/main.dir/main.c.o: /home/dylenthomas/LiveASRonRPi-4/src/main.c \
 
 /usr/include/x86_64-linux-gnu/bits/types/__sigset_t.h:
 
-/usr/include/x86_64-linux-gnu/bits/types/locale_t.h:
-
-/usr/include/asm-generic/types.h:
-
-/usr/include/asm-generic/bitsperlong.h:
-
-/usr/include/alsa/global.h:
-
-/usr/include/x86_64-linux-gnu/bits/types/sigset_t.h:
+/usr/include/x86_64-linux-gnu/bits/types/struct___jmp_buf_tag.h:
 
 /usr/include/x86_64-linux-gnu/bits/types/clockid_t.h:
 
-/usr/include/x86_64-linux-gnu/bits/types/struct___jmp_buf_tag.h:
-
-/usr/include/x86_64-linux-gnu/bits/types/struct_iovec.h:
-
-/usr/include/x86_64-linux-gnu/bits/stdint-uintn.h:
-
-/usr/include/x86_64-linux-gnu/bits/types/struct_timespec.h:
-
-/usr/include/x86_64-linux-gnu/bits/types/struct_tm.h:
+/usr/include/x86_64-linux-gnu/bits/types/locale_t.h:
