@@ -1,15 +1,16 @@
-#include <Python.h>
+//#include <Python.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
 #include <pthread.h>
 #include <time.h>
 #include <signal.h>
+#include <stdatomic.h>
 
 #include "onnxruntime_c_api.h"
 #include "mic_access.h"
 #include "config_parser.h"
-#include "transcripter_api.h"
+//#include "transcripter_api.h"
 #include "fft.h"
 
 #define KEYWORD_CONF "configs/keywords.json"
@@ -37,11 +38,11 @@ void intHandler(int dummy) {
 struct mic_thread_data {
     float* buffer;
     snd_pcm_t* device;
-    long int* updated;
+    atomic_long* updated;
+    pthread_mutex_t* mutex;
 };
 
-int run_mic_threads = 0;
-int processing_mic_data = 0;
+atomic_int run_mic_threads = 0;
 
 int badStatus(OrtStatus* status, const OrtApi* ort) {
 	// Make sure the API was accessed correctly 
@@ -54,9 +55,8 @@ int badStatus(OrtStatus* status, const OrtApi* ort) {
 	return 0;
 }
 
-void getSpeechProb(
-        float* speech_prob,
-        OrtValue** outputs,
+float getSpeechProb(
+        OrtValue*** outputs,
         size_t output_count,
 		const OrtApi* ort,
 		OrtSession* session,
@@ -64,34 +64,32 @@ void getSpeechProb(
         OrtIoBinding* io_binding,
         OrtAllocator* alloc
 		) {
-    if (badStatus(ort->RunWithBinding(session, run_opts, io_binding), ort)) { return; }
-    if (badStatus(ort->GetBoundOutputValues(io_binding, alloc, &outputs, &output_count), ort)) { return; }
+    if (badStatus(ort->RunWithBinding(session, run_opts, io_binding), ort)) { return -1.0f; }
+    if (badStatus(ort->GetBoundOutputValues(io_binding, alloc, outputs, &output_count), ort)) { return -1.0f; }
 	
 	// Retrieve probability of speech from the model
-	OrtValue* ort_speech_prob = outputs[0];
+	OrtValue* ort_speech_prob = (*outputs)[0];
 	
 	float* prob_data = NULL;
-	if (badStatus(ort->GetTensorMutableData(ort_speech_prob, (void**)&prob_data), ort)) { return; }
-	*speech_prob = prob_data[0];
+	if (badStatus(ort->GetTensorMutableData(ort_speech_prob, (void**)&prob_data), ort)) { return -1.0f; }
+    return prob_data[0];
 }
 
 void* readMicData(void* ptr) {
     struct mic_thread_data* args = (struct mic_thread_data*)ptr;
 
     while (run_mic_threads) {
-        // don't collect audio data if processing the previously collected mic data
-        if (processing_mic_data) { continue; }
-
-	    int16_t tmp_buffer[MIC_BUFFER_LEN] = {0};
+        int16_t tmp_buffer[MIC_BUFFER_LEN] = {0};
 	    int i = 0;
 	
         read_mic(tmp_buffer, args->device, MIC_BUFFER_LEN);
         // convert int mic data to float	
+        pthread_mutex_lock(args->mutex);
 	    while (i < MIC_BUFFER_LEN) { args->buffer[i] = (float)tmp_buffer[i] / 32768.0f; i++; }
-
-        // tell the main loop the mic buffer is updated by changing updated to random number
-        // want to avoid race condition of both threads updating value at the same time
-        *(args->updated) = random();
+        pthread_mutex_unlock(args->mutex);
+        
+        // avoid running prediction on old data
+        atomic_store(args->updated, random());
     }
 
     return NULL;
@@ -110,6 +108,8 @@ int findSampleDelay(float* ref_buffer, float* other_buffer)  {
         x[i].Im = 0.0f;
         y[i].Re = other_buffer[i];
         y[i].Im = 0.0f;
+
+        i++;
     }
 
     fft(x, n, tmp);
@@ -131,6 +131,8 @@ int findSampleDelay(float* ref_buffer, float* other_buffer)  {
 
         Rxy[i].Re = (a*c + b*d)/mag;
         Rxy[i].Im = (b*c - a*d)/mag;
+
+        i++;
     }
 
     ifft(Rxy, n, tmp);
@@ -141,6 +143,8 @@ int findSampleDelay(float* ref_buffer, float* other_buffer)  {
         float a = (Rxy[i].Re < 0.0) ? -Rxy[i].Re : Rxy[i].Re;
         float b = (Rxy[m_delay].Re < 0.0) ? -Rxy[m_delay].Re : Rxy[m_delay].Re;
         m_delay = (a > b) ? i : m_delay;
+
+        i++;
     }
     
     return (m_delay > n/2) ? m_delay - n : m_delay;
@@ -150,8 +154,8 @@ int main(int argc, char *argv[]) {
     signal(SIGINT, intHandler);
     srandom(time(NULL));
 
-    Py_Initialize(); 
-    import_transcripter();
+    //Py_Initialize(); 
+    //import_transcripter();
 
 	if (argc != 4) { printf("Args should be: VAD Model Path, Mic1 Name, Mic2 Name\n"); return 0; }
 	const char* vad_model_path = argv[1];
@@ -177,8 +181,8 @@ int main(int argc, char *argv[]) {
 	const int64_t input_data_shape[] = {1, MIC_BUFFER_LEN}; // input data will be the mic buffer
 	const int64_t state_data_shape[] = {2, 1, 128};	
 
-    long int updated1 = 0L;
-    long int updated2 = 0L;
+    atomic_long updated1 = ATOMIC_VAR_INIT(0);
+    atomic_long updated2 = ATOMIC_VAR_INIT(0);
     float mic1_buffer[MIC_BUFFER_LEN] = {0};
     float mic2_buffer[MIC_BUFFER_LEN] = {0};
     float combined_buffer[MIC_BUFFER_LEN] = {0};
@@ -192,6 +196,8 @@ int main(int argc, char *argv[]) {
     int ret;
     long int mic1_last_updated;
     long int mic2_last_updated;
+
+    complex X[MIC_BUFFER_LEN], Y[MIC_BUFFER_LEN], combined[MIC_BUFFER_LEN], tmp[MIC_BUFFER_LEN];
 // Initialize the ORT Api --------------------------------------------------------------------------
 	printf("Initializing ORT...\n");
 	const OrtApi* ort = OrtGetApiBase()->GetApi(ORT_API_VERSION);
@@ -261,81 +267,91 @@ int main(int argc, char *argv[]) {
 
     struct mic_thread_data mic_data[2];
 
-    mic_data[1].buffer = mic1_buffer;
-    mic_data[1].device = mic1_ch;
-    mic_data[1].updated = &updated1;
-    mic_data[2].buffer = mic2_buffer;
-    mic_data[2].device = mic2_ch;
-    mic_data[2].updated = &updated2;
+    pthread_mutex_t mutex1 = PTHREAD_MUTEX_INITIALIZER;
+    pthread_mutex_t mutex2 = PTHREAD_MUTEX_INITIALIZER;
+
+    mic_data[0].buffer = mic1_buffer;
+    mic_data[0].device = mic1_ch;
+    mic_data[0].updated = &updated1;
+    mic_data[0].mutex = &mutex1;
+    mic_data[1].buffer = mic2_buffer;
+    mic_data[1].device = mic2_ch;
+    mic_data[1].updated = &updated2;
+    mic_data[1].mutex = &mutex2;
 // -------------------------------------------------------------------------------------------------
 	printf("Starting audio collection.\n");
 
     pthread_t thread[NUM_THREADS];
     run_mic_threads = 1;
 
-    if ((ret = pthread_create(&thread[1], NULL, readMicData, &mic_data[1])) != 0) { 
+    if ((ret = pthread_create(&thread[0], NULL, readMicData, &mic_data[0])) != 0) { 
         fprintf(stderr, "Error: failed to create thread 1 %d", ret);
         return 1; 
     }
     printf("Started mic1 thread.\n");
 
-    if ((ret = pthread_create(&thread[2], NULL, readMicData, &mic_data[2])) != 0) { 
+    if ((ret = pthread_create(&thread[1], NULL, readMicData, &mic_data[1])) != 0) { 
         fprintf(stderr, "Error: failed to create thread 2 %d", ret);
         return 1; 
     }
     printf("Started mic2 thread.\n");
 
-    mic1_last_updated = *mic_data[1].updated;
-    mic2_last_updated = *mic_data[2].updated;
+    mic1_last_updated = *mic_data[0].updated;
+    mic2_last_updated = *mic_data[1].updated;
     
     while (keep_running) {
         // wait until both buffers are populated
-        if (mic1_last_updated == *mic_data[1].updated) { continue; }
-        mic1_last_updated = *mic_data[1].updated;
-        printf("mic1 updated\n");
+        if (mic1_last_updated == *mic_data[0].updated) { continue; }
+        mic1_last_updated = *mic_data[0].updated;
+        //printf("mic1 updated\n");
 
-        if (mic2_last_updated == *mic_data[2].updated) { continue; }
-        mic2_last_updated = *mic_data[2].updated;
-        printf("mic2 updated\n");
-
-        // stop collecting mic data for processing
-        processing_mic_data = 1;
+        if (mic2_last_updated == *mic_data[1].updated) { continue; }
+        mic2_last_updated = *mic_data[1].updated;
+        //printf("mic2 updated\n");
 
         // get the delay of mic2 relative to mic1
-        int delay = findSampleDelay(mic_data[1].buffer, mic_data[2].buffer);
-        printf("Microphone delay is %d\n", delay);
-
-        if (delay < 0) {
-        // mic2 is ahead of mic1
-            delay = -delay;
-            int x = 0;
-            while (x < MIC_BUFFER_LEN - delay) {
-                combined_buffer[x] = mic_data[1].buffer[x + delay] + mic_data[2].buffer[x];
-            }
+        pthread_mutex_lock(mic_data[0].mutex);
+        pthread_mutex_lock(mic_data[1].mutex);
+        for (int i = 0; i < MIC_BUFFER_LEN; i++) {
+            X[i].Re = mic_data[0].buffer[i]; X[i].Im = 0.0f;
+            Y[i].Re = mic_data[1].buffer[i]; Y[i].Im = 0.0f;
         }
-        else {
-        // mic1 is ahead of mic2
-            int x = 0;
-            while (x < MIC_BUFFER_LEN - delay) {
-                combined_buffer[x] = mic_data[1].buffer[x] + mic_data[2].buffer[x + delay];
-            }
+
+        int delay = findSampleDelay(mic_data[0].buffer, mic_data[1].buffer);
+
+        fft(X, MIC_BUFFER_LEN, tmp);
+        fft(Y, MIC_BUFFER_LEN, tmp);
+
+        for (int f = 0; f < MIC_BUFFER_LEN; f++){
+            double shift_angle = -2 * PI * f * delay/MIC_BUFFER_LEN;
+            complex Y_shifted;
+
+            Y_shifted.Re = Y[f].Re * cos(shift_angle) - Y[f].Im * sin(shift_angle);
+            Y_shifted.Im = Y[f].Re * sin(shift_angle) + Y[f].Im * cos(shift_angle);
+
+            combined[f].Re = (X[f].Re + Y_shifted.Re) * 0.5f;
+            combined[f].Im = (X[f].Im + Y_shifted.Im) * 0.5f;
         }
-        pritnf("Microphone data has been combined\n");
 
-        // start collecting mic data 
-        processing_mic_data = 0;
+        ifft(combined, MIC_BUFFER_LEN, tmp);
+        memset(combined_buffer, 0, sizeof(combined_buffer));
 
-		float* speech_prob = NULL;
+        for (int i = 0; i < MIC_BUFFER_LEN; i++) {
+            combined_buffer[i] = combined[i].Re / MIC_BUFFER_LEN;
+        }
+
+        pthread_mutex_unlock(mic_data[0].mutex);
+        pthread_mutex_unlock(mic_data[1].mutex);
+
+		float speech_prob;
         OrtValue** outputs = NULL;
-		
-		(void)getSpeechProb(speech_prob, outputs, num_outputs, ort, ort_session, ort_run_opts, io_binding, alloc);
-        if (speech_prob == NULL) { continue; } // if VAD failed just skip the iteration 
+
+		speech_prob = getSpeechProb(&outputs, num_outputs, ort, ort_session, ort_run_opts, io_binding, alloc);
+        if (speech_prob == -1.0f) { continue; } // if VAD failed just skip the iteration 
         
-        printf("%.2f", *speech_prob);
-        
-        if (*speech_prob > peak_value) {
+        if (speech_prob > peak_value) {
         // Increase
-            peak_value = *speech_prob;
+            peak_value = speech_prob;
             iterations_decayed = 0;
         }
         else if (iterations_held <= hold_iterations) {
@@ -348,35 +364,37 @@ int main(int argc, char *argv[]) {
             peak_value *= exp(-1 * decay_rate * iterations_decayed);
             iterations_decayed++;
         }
+        
+        printf("%.2f\n", peak_value);
 
-        if (peak_value >= speech_threshold) {
-            i = 0;
-            while (i < MIC_BUFFER_LEN) { 
-                long_buffer[i + MIC_BUFFER_LEN * transcript_buffers] = combined_buffer[i]; 
-                i++; 
-            }
-            transcript_buffers++;
-        }
-        else if (transcript_buffers) {
+        //if (peak_value >= speech_threshold) {
+        //    i = 0;
+        //    while (i < MIC_BUFFER_LEN) { 
+        //        long_buffer[i + MIC_BUFFER_LEN * transcript_buffers] = combined_buffer[i]; 
+        //        i++; 
+        //    }
+        //    transcript_buffers++;
+        //}
+        //else if (transcript_buffers) {
             // transcribe
 
-            i = 0;
-            while (i < SAMPLE_RATE * LONGEST_TRANSCRIPT) { long_buffer[i] = 0.0f; }
-            transcript_buffers = 0;
-        }
+        //    memset(long_buffer, 0, sizeof(long_buffer));
+        //    transcript_buffers = 0;
+        //}
 
         // Cleanup iteration
         ort->ReleaseValue(state_tensor);
         ort->ReleaseValue(outputs[0]);
         state_tensor = outputs[1];
         outputs[1] = NULL;
-        
-        i = 0;
-        while (i < MIC_BUFFER_LEN) { combined_buffer[i] = 0.0f; } 
+
 	}
 	
 // Cleanup for program exit ------------------------------------------------------------------------
     printf("cleaning up..\n");
+
+    run_mic_threads = 0;
+    keep_running = 0;
 
 	ort->ReleaseMemoryInfo(cpu_mem_info);
     ort->ReleaseMemoryInfo(gpu_mem_info);
@@ -385,11 +403,17 @@ int main(int argc, char *argv[]) {
     ort->ReleaseCUDAProviderOptions(cuda_opts);
 	ort->ReleaseSessionOptions(session_opts);
 	ort->ReleaseEnv(env);
+    printf("Released all ORT bindings.\n");
+
+    pthread_join(thread[0], NULL);
+    pthread_join(thread[1], NULL);
+    printf("Joined threads.\n");
 
 	close_mic(mic1_ch);
     close_mic(mic2_ch);
+    printf("Closed mics.\n");
 
-    Py_Finalize();
+    //Py_Finalize();
 
 	return 0;
 }

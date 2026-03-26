@@ -99,6 +99,10 @@ main: /home/dylenthomas/LiveASRonRPi-4/libs/libfft.so
 main: /home/dylenthomas/LiveASRonRPi-4/libs/libtranscripter.cpython-312.so
 main: /home/dylenthomas/LiveASRonRPi-4/libs/libconfig_parser.so
 main: /usr/lib/x86_64-linux-gnu/libpython3.12.so
+main: /usr/local/cuda-12.8/lib64/libcudart.so
+main: /usr/local/cuda-12.8/lib64/libcublas.so
+main: /usr/local/cuda-12.8/lib64/libcublasLt.so
+main: /usr/local/cuda-12.8/lib64/libculibos.a
 main: CMakeFiles/main.dir/link.txt
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --bold --progress-dir=/home/dylenthomas/LiveASRonRPi-4/src/cbuild/CMakeFiles --progress-num=$(CMAKE_PROGRESS_2) "Linking C executable main"
 	$(CMAKE_COMMAND) -E cmake_link_script CMakeFiles/main.dir/link.txt --verbose=$(VERBOSE)

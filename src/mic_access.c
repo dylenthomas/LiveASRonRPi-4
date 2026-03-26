@@ -11,12 +11,11 @@ void checkErr(int err) {
 
 void read_mic(int16_t* buffer, snd_pcm_t* capture_handle, int buffer_samples) {
 	int err = snd_pcm_readi(capture_handle, buffer, buffer_samples);
+	checkErr(err);
 	if (err != buffer_samples) {
 		fprintf(stderr, "Read from audio interface failed! (%s)\n", snd_strerror(err));
 		checkErr(snd_pcm_recover(capture_handle, err, 1));
 	}
-
-	// TODO implement high pass filter
 }
 
 void init_mic(const char* name, snd_pcm_t** capture_handle, int sample_rate, int channels, int buffer_samples) {

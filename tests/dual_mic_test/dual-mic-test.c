@@ -10,8 +10,9 @@
 
 #include "mic_access.h"
 #include "fft.h"
+#include "wav_writer.h"   // NEW: WAV recording
 
-#define MIC_BUFFER_LEN 512 
+#define MIC_BUFFER_LEN 1024 
 #define SAMPLE_RATE 16000
 #define CHANNELS 1
 #define LONGEST_TRANSCRIPT 30
@@ -26,11 +27,10 @@ struct mic_thread_data {
     float* buffer;
     snd_pcm_t* device;
     atomic_long* updated; 
+    pthread_mutex_t* mutex; 
 };
 
 atomic_int run_mic_threads = 0;
-atomic_int processing_mic_data = 0;
-
 
 void* readMicData(void* ptr) {
     printf("Starting mic thread.\n");
@@ -38,16 +38,15 @@ void* readMicData(void* ptr) {
     struct mic_thread_data* args = (struct mic_thread_data*)ptr;
 
     while (run_mic_threads) {
-        // don't collect audio data if processing the previously collected mic data
-        if (processing_mic_data) { continue; }
-
 	    int16_t tmp_buffer[MIC_BUFFER_LEN] = {0};
 	    int i = 0;
 	
         read_mic(tmp_buffer, args->device, MIC_BUFFER_LEN);
 
-        // convert int mic data to float	
+        // convert int mic data to float
+        pthread_mutex_lock(args->mutex);
 	    while (i < MIC_BUFFER_LEN) { args->buffer[i] = (float)tmp_buffer[i] / 32768.0f; i++; }
+        pthread_mutex_unlock(args->mutex);
 
         // tell the main loop the mic buffer is updated by changing updated to random number
         // want to avoid race condition of both threads updating value at the same time
@@ -73,7 +72,7 @@ int findSampleDelay(float* ref_buffer, float* other_buffer)  {
 
         i++;
     }
-
+    
     fft(x, n, tmp);
     fft(y, n, tmp);
 
@@ -136,6 +135,22 @@ int main(int argc, char *argv[]) {
     long int mic1_last_updated;
     long int mic2_last_updated;
 
+    complex X[MIC_BUFFER_LEN], Y[MIC_BUFFER_LEN], tmp[MIC_BUFFER_LEN], combined[MIC_BUFFER_LEN];
+
+// Initialize WAV output ---------------------------------------------------------------------------
+    // NEW: build a timestamped filename and open the WAV writer
+    char wav_filename[64];
+    time_t now = time(NULL);
+    strftime(wav_filename, sizeof(wav_filename), "recording_%Y%m%d_%H%M%S.wav", localtime(&now));
+
+    WavWriter wav;
+    if (wav_open(&wav, wav_filename, SAMPLE_RATE, CHANNELS) != 0) {
+        fprintf(stderr, "Error: could not open WAV file %s for writing\n", wav_filename);
+        return 1;
+    }
+    printf("Recording to %s\n", wav_filename);
+// -------------------------------------------------------------------------------------------------
+
 // Initialize Microphone ---------------------------------------------------------------------------
     int i;
 
@@ -150,13 +165,18 @@ int main(int argc, char *argv[]) {
     printf("Initialized both microphones\n");
 
     struct mic_thread_data mic_data[2];
+    
+    pthread_mutex_t mutex1 = PTHREAD_MUTEX_INITIALIZER;
+    pthread_mutex_t mutex2 = PTHREAD_MUTEX_INITIALIZER;
 
     mic_data[0].buffer = mic1_buffer;
     mic_data[0].device = mic1_ch;
     mic_data[0].updated = &updated1;
+    mic_data[0].mutex = &mutex1;
     mic_data[1].buffer = mic2_buffer;
     mic_data[1].device = mic2_ch;
     mic_data[1].updated = &updated2;
+    mic_data[1].mutex = &mutex2;
 // -------------------------------------------------------------------------------------------------
 	printf("Starting audio collection.\n");
 
@@ -175,7 +195,7 @@ int main(int argc, char *argv[]) {
 
     mic1_last_updated = atomic_load(mic_data[0].updated);
     mic2_last_updated = atomic_load(mic_data[1].updated);
-    
+
     while (keep_running) {
         // wait until both buffers are populated
         if (mic1_last_updated == atomic_load(mic_data[0].updated)) { continue; }
@@ -184,35 +204,44 @@ int main(int argc, char *argv[]) {
         if (mic2_last_updated == atomic_load(mic_data[1].updated)) { continue; }
         mic2_last_updated = atomic_load(mic_data[1].updated);
 
-        // stop collecting mic data for processing
-        processing_mic_data = 1;
-
         // get the delay of mic2 relative to mic1
+        pthread_mutex_lock(mic_data[0].mutex);
+        pthread_mutex_lock(mic_data[1].mutex);
+
+        for (int i = 0; i < MIC_BUFFER_LEN; i++) {
+            X[i].Re = mic_data[0].buffer[i]; X[i].Im = 0.0f;
+            Y[i].Re = mic_data[1].buffer[i]; Y[i].Im = 0.0f;
+        }
+
         int delay = findSampleDelay(mic_data[0].buffer, mic_data[1].buffer);
         printf("delay %d\n", delay);
 
-        if (delay < 0) {
-        // mic2 is ahead of mic1
-            delay = -delay;
-            int x = 0;
-            while (x < MIC_BUFFER_LEN - delay) {
-                combined_buffer[x] = mic_data[0].buffer[x + delay] + mic_data[1].buffer[x];
-                x++;
-            }
-        }
-        else {
-        // mic1 is ahead of mic2
-            int x = 0;
-            while (x < MIC_BUFFER_LEN - delay) {
-                combined_buffer[x] = mic_data[0].buffer[x] + mic_data[1].buffer[x + delay];
-                x++;
-            }
+        fft(X, MIC_BUFFER_LEN, tmp);
+        fft(Y, MIC_BUFFER_LEN, tmp);
+
+
+        for (int f = 0; f < MIC_BUFFER_LEN; f++) {
+            double shift_angle = -2 * PI * f * delay/MIC_BUFFER_LEN;
+            
+            complex Y_shifted;
+            Y_shifted.Re = Y[f].Re * cos(shift_angle) - Y[f].Im * sin(shift_angle);
+            Y_shifted.Im = Y[f].Re * sin(shift_angle) + Y[f].Im * cos(shift_angle);
+            
+            combined[f].Re = (X[f].Re + Y_shifted.Re) * 0.5f;
+            combined[f].Im = (X[f].Im + Y_shifted.Im) * 0.5f;
         }
 
-        // start collecting mic data 
-        processing_mic_data = 0;
-
+        ifft(combined, MIC_BUFFER_LEN, tmp);
         memset(combined_buffer, 0, sizeof(combined_buffer));
+
+        for (int i = 0; i < MIC_BUFFER_LEN; i++) {
+            combined_buffer[i] = combined[i].Re / MIC_BUFFER_LEN;
+        }
+       
+        pthread_mutex_unlock(mic_data[0].mutex);
+        pthread_mutex_unlock(mic_data[1].mutex);
+
+        wav_write_float(&wav, combined_buffer, MIC_BUFFER_LEN);
 	}
 	
 // Cleanup for program exit ------------------------------------------------------------------------
@@ -223,6 +252,10 @@ int main(int argc, char *argv[]) {
     pthread_join(thread[1], NULL);
     close_mic(mic1_ch);
     close_mic(mic2_ch);
+
+    // NEW: finalise and close the WAV file (patches the header with correct sizes)
+    wav_close(&wav);
+    printf("Saved recording to %s\n", wav_filename);
 	
     return 0;
 }

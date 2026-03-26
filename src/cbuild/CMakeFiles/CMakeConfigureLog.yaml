@@ -1786,3 +1786,43 @@ events:
       
       
 ...
+
+---
+events:
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/usr/share/cmake-3.28/Modules/Internal/CheckSourceCompiles.cmake:101 (try_compile)"
+      - "/usr/share/cmake-3.28/Modules/CheckCSourceCompiles.cmake:52 (cmake_check_source_compiles)"
+      - "/usr/share/cmake-3.28/Modules/FindThreads.cmake:97 (CHECK_C_SOURCE_COMPILES)"
+      - "/usr/share/cmake-3.28/Modules/FindThreads.cmake:163 (_threads_check_libc)"
+      - "/usr/share/cmake-3.28/Modules/FindCUDAToolkit.cmake:1152 (find_package)"
+      - "CMakeLists.txt:11 (find_package)"
+    checks:
+      - "Performing Test CMAKE_HAVE_LIBC_PTHREAD"
+    directories:
+      source: "/home/dylenthomas/LiveASRonRPi-4/src/cbuild/CMakeFiles/CMakeScratch/TryCompile-dG436S"
+      binary: "/home/dylenthomas/LiveASRonRPi-4/src/cbuild/CMakeFiles/CMakeScratch/TryCompile-dG436S"
+    cmakeVariables:
+      CMAKE_CUDA_ARCHITECTURES: "native"
+      CMAKE_C_FLAGS: ""
+      CMAKE_C_FLAGS_DEBUG: "-g"
+      CMAKE_EXE_LINKER_FLAGS: ""
+    buildResult:
+      variable: "CMAKE_HAVE_LIBC_PTHREAD"
+      cached: true
+      stdout: |
+        Change Dir: '/home/dylenthomas/LiveASRonRPi-4/src/cbuild/CMakeFiles/CMakeScratch/TryCompile-dG436S'
+        
+        Run Build Command(s): /usr/bin/cmake -E env VERBOSE=1 /usr/bin/gmake -f Makefile cmTC_b072f/fast
+        /usr/bin/gmake  -f CMakeFiles/cmTC_b072f.dir/build.make CMakeFiles/cmTC_b072f.dir/build
+        gmake[1]: Entering directory '/home/dylenthomas/LiveASRonRPi-4/src/cbuild/CMakeFiles/CMakeScratch/TryCompile-dG436S'
+        Building C object CMakeFiles/cmTC_b072f.dir/src.c.o
+        /usr/bin/cc -DCMAKE_HAVE_LIBC_PTHREAD   -o CMakeFiles/cmTC_b072f.dir/src.c.o -c /home/dylenthomas/LiveASRonRPi-4/src/cbuild/CMakeFiles/CMakeScratch/TryCompile-dG436S/src.c
+        Linking C executable cmTC_b072f
+        /usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_b072f.dir/link.txt --verbose=1
+        /usr/bin/cc CMakeFiles/cmTC_b072f.dir/src.c.o -o cmTC_b072f 
+        gmake[1]: Leaving directory '/home/dylenthomas/LiveASRonRPi-4/src/cbuild/CMakeFiles/CMakeScratch/TryCompile-dG436S'
+        
+      exitCode: 0
+...

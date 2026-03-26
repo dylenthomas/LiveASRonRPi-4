@@ -3,3 +3,5 @@ libs/onnxruntime
 build*/
 cmake-build*/
 CMakeFiles/
+.vscode/
+cbuild/

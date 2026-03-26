@@ -1,11 +1,9 @@
 cmake_minimum_required(VERSION 3.28)
 set(CMAKE_CUDA_ARCHITECTURES "native")
-project(OnnxGpuTest LANGUAGES C)
+project(dual_mic_test LANGUAGES C)
 
 set(PROJECT_SOURCE "/home/dylenthomas/LiveASRonRPi-4")
 set(LIBS "${PROJECT_SOURCE}/libs")
-
-find_package(Python 3.12 EXACT REQUIRED COMPONENTS Development.Embed)
 
 find_library(MIC_LIB mic_access PATHS ${LIBS} NO_DEFAULT_PATH REQUIRED)
 find_library(FFT_LIB fft PATHS ${LIBS} NO_DEFAULT_PATH REQUIRED)
@@ -15,6 +13,7 @@ add_executable(dual-mic-test dual-mic-test.c)
 
 include_directories(dual-mic-test PRIVATE
     "${PROJECT_SOURCE}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}"
 )
 
 target_link_libraries(dual-mic-test PRIVATE
