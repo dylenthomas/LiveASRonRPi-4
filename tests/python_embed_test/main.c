@@ -2,43 +2,15 @@
 #include <wchar.h>
 
 int main(int argc, char* argv[]) {
-    PyStatus status;
-    PyConfig config;
-    PyConfig_InitPythonConfig(&config);
+    Py_Initialize();
 
-    status = PyConfig_SetString(&config, &config.program_name,
-        L"/home/dylenthomas/LiveASRonRPi-4/tests/python_embed_test/build/venv/bin/python3");
-    
-    if (PyStatus_Exception(status)) {
-        PyConfig_Clear(&config);
-        return -1;
-    }
+    PyObject *sys_path = PySys_GetObject("path");
+    PyObject *test_path_str = PyUnicode_FromString("/home/dylenthomas/LiveASRonRPi-4/tests/python_embed_test");
+    PyObject *site_packages_path_str = PyUnicode_FromString("/home/dylenthomas/LiveASRonRPi-4/tests/python_embed_test/build/venv/lib/python3.14/site-packages");
+    PyList_Append(sys_path, test_path_str);
+    PyList_Append(sys_path, site_packages_path_str);
 
-    config.module_search_paths_set = 1;
-    status = PyWideStringList_Append(&config.module_search_paths, 
-        L"/home/dylenthomas/LiveASRonRPi-4/tests/python_embed_test/build/venv/lib");
-    
-    if (PyStatus_Exception(status)) {
-        PyConfig_Clear(&config);
-        return -1;
-    }
-
-    status = Py_InitializeFromConfig(&config);
-    if (PyStatus_Exception(status)) {
-        PyConfig_Clear(&config);
-        Py_ExitStatusException(status);
-        return -1;
-    }
-
-    PyConfig_Clear(&config);
-
-    PyRun_SimpleString(
-        "import sys\n"
-        "print('Python sys.path:', sys.path)\n"
-        "print('Python version:', sys.version)\n"
-    );
-
-    printf("Initialized Python!\n");
+    PyRun_SimpleString("import sys; print('sys.path:', sys.path)");
 
     PyObject* pModule = PyImport_Import(PyUnicode_DecodeFSDefault("pythonTest"));
     if (pModule == NULL) {
@@ -46,4 +18,13 @@ int main(int argc, char* argv[]) {
         fprintf(stderr, "ERROR: Failed to import module.\n");
         return -1;
     }
+
+    PyObject *pFunc = PyObject_GetAttrString(pModule, "main");
+    PyObject *pResult = PyObject_CallNoArgs(pFunc);
+
+    Py_DECREF(pModule);
+    Py_DECREF(test_path_str);
+    Py_DECREF(site_packages_path_str);
+    Py_DECREF(pFunc);
+    Py_DECREF(pResult);
 }
