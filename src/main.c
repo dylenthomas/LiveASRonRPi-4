@@ -1,3 +1,4 @@
+#define PY_SSIZE_T_CLEAN
 #include <Python.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -157,8 +158,8 @@ int main(int argc, char *argv[]) {
     // Initialize Python 
     Py_Initialize(); 
 
-    PyObject *pModule = PyImport_Import(PyUnicode_DecodeFSDefault("transcripter"));
-    PyObject *pTranscribeFunc = PyObject_GetAttrString(pModule, "transcribe");
+    PyObject* pModule = PyImport_Import(PyUnicode_DecodeFSDefault("transcripter"));
+    PyObject* pTranscribeFunc = PyObject_GetAttrString(pModule, "transcribe");
 
 	if (argc != 4) { printf("Args should be: VAD Model Path, Mic1 Name, Mic2 Name\n"); return 0; }
 	const char* vad_model_path = argv[1];
@@ -370,20 +371,31 @@ int main(int argc, char *argv[]) {
         
         printf("%.2f\n", peak_value);
 
-        //if (peak_value >= speech_threshold) {
-        //    i = 0;
-        //    while (i < MIC_BUFFER_LEN) { 
-        //        long_buffer[i + MIC_BUFFER_LEN * transcript_buffers] = combined_buffer[i]; 
-        //        i++; 
-        //    }
-        //    transcript_buffers++;
-        //}
-        //else if (transcript_buffers) {
-            // transcribe
+        if (peak_value >= speech_threshold) {
+            i = 0;
+            while (i < MIC_BUFFER_LEN) { 
+                long_buffer[i + MIC_BUFFER_LEN * transcript_buffers] = combined_buffer[i]; 
+                i++; 
+            }
+            transcript_buffers++;
+        }
+        else if (transcript_buffers) {
+            PyObject *pArgs = PyTuple_New(transcript_buffers * MIC_BUFFER_LEN);
+            i = 0;
+            while (i < transcript_buffers * MIC_BUFFER_LEN) {
+                PyTuple_SetItem(pArgs, i, PyFloat_FromDouble(long_buffer[i]));
+                i++;
+            }
+            
+            PyObject *pCallArgs = PyTuple_Pack(1, pArgs);
+            PyObject *pResult = PyObject_Call(pTranscribeFunc, pCallArgs, NULL);
 
-        //    memset(long_buffer, 0, sizeof(long_buffer));
-        //    transcript_buffers = 0;
-        //}
+            Py_DECREF(pArgs);
+            Py_DECREF(pCallArgs);
+            Py_DECREF(pResult);
+            memset(long_buffer, 0, sizeof(long_buffer));
+            transcript_buffers = 0;
+        }
 
         // Cleanup iteration
         ort->ReleaseValue(state_tensor);
