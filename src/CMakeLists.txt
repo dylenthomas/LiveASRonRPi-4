@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.28)
 set(CMAKE_CUDA_ARCHITECTURES "native")
 project(LARS LANGUAGES C CUDA)
 
-set(PROJECT_SOURCE "/home/dylenthomas/LiveASRonRPi-4")
+set(PROJECT_SOURCE "/home/dylenthomas/Documents/LiveASRonRPi-4")
 set(LIBS "${PROJECT_SOURCE}/libs")
 set(ORT_LIB_DIR "${LIBS}/onnxruntime")
 
@@ -13,7 +13,6 @@ find_library(ORT_LIB onnxruntime PATHS ${ORT_LIB_DIR} NO_DEFAULT_PATH REQUIRED)
 find_library(MIC_LIB mic_access PATHS ${LIBS} NO_DEFAULT_PATH REQUIRED)
 find_library(FFT_LIB fft PATHS ${LIBS} NO_DEFAULT_PATH REQUIRED)
 find_library(ALSA_LIB asound REQUIRED)
-find_library(TRANSC_LIB transcripter.cpython-312 PATHS ${LIBS} NO_DEFAULT_PATH REQUIRED)
 find_library(CNFG_PARSR config_parser PATHS ${LIBS} NO_DEFAULT_PATH REQUIRED)
 
 add_executable(main main.c)

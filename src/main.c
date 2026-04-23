@@ -1,4 +1,4 @@
-//#include <Python.h>
+#include <Python.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
@@ -154,8 +154,11 @@ int main(int argc, char *argv[]) {
     signal(SIGINT, intHandler);
     srandom(time(NULL));
 
-    //Py_Initialize(); 
-    //import_transcripter();
+    // Initialize Python 
+    Py_Initialize(); 
+
+    PyObject *pModule = PyImport_Import(PyUnicode_DecodeFSDefault("transcripter"));
+    PyObject *pTranscribeFunc = PyObject_GetAttrString(pModule, "transcribe");
 
 	if (argc != 4) { printf("Args should be: VAD Model Path, Mic1 Name, Mic2 Name\n"); return 0; }
 	const char* vad_model_path = argv[1];
@@ -413,7 +416,9 @@ int main(int argc, char *argv[]) {
     close_mic(mic2_ch);
     printf("Closed mics.\n");
 
-    //Py_Finalize();
+    Py_DECREF(pTranscribeFunc);
+    Py_DECREF(pModule);
+    Py_Finalize();
 
 	return 0;
 }
