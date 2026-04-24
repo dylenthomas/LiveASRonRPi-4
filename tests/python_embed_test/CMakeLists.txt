@@ -20,7 +20,7 @@ endif()
 
 message(STATUS "Installing Python dependencies...")
 execute_process(
-    COMMAND ${VENV_DIR}/bin/pip install numpy
+    COMMAND ${VENV_DIR}/bin/pip install numpy torch
     RESULT_VARIABLE PIP_RESULT
 )
 if(NOT PIP_RESULT EQUAL 0)
